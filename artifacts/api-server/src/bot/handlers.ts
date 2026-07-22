@@ -1,42 +1,115 @@
-import { openai } from "./openai-client.js";
+import OpenAI from "openai";
+import {
+  getOrCreateProfile,
+  addToHistory,
+  updateBusinessContext,
+} from "./user-profiles.js";
 
-const SYSTEM_PROMPT = `Tu es un assistant expert en business, entrepreneuriat et stratégie d'entreprise. 
-Tu fournis des conseils pratiques, précis et actionnables. Tu parles en français sauf si l'utilisateur écrit dans une autre langue. 
-Tu es concis (réponses de 200-400 mots max pour Telegram), structuré, et tu utilises des emojis avec modération pour rendre le texte lisible.
-Tu t'adresses à des entrepreneurs, créateurs d'entreprise et professionnels qui veulent améliorer leurs compétences business.`;
+if (!process.env["OPENAI_API_KEY"]) {
+  throw new Error("OPENAI_API_KEY environment variable is required.");
+}
 
-async function askAI(prompt: string): Promise<string> {
+const openai = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
+
+// ─── System prompt ────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(firstName: string, businessContext: string): string {
+  return `Tu es un coach business personnel appelé "BusinessAI", qui accompagne ${firstName} avec bienveillance, précision et chaleur humaine.
+
+TON IDENTITÉ DE COACH :
+- Tu parles directement à ${firstName} en utilisant son prénom naturellement (pas à chaque phrase, juste quand c'est naturel).
+- Tu es à la fois expert business ET humain : tu comprends que derrière chaque question il y a un entrepreneur avec des doutes, des ambitions et parfois du stress.
+- Tu valides les émotions avant de donner des conseils. Si quelqu'un est découragé, tu le reconnais d'abord.
+- Tu poses UNE question de suivi à la fin de chaque réponse pour approfondir et montrer que tu es vraiment engagé dans sa réussite.
+- Tu adaptes ton ton : si ${firstName} est enthousiaste, tu l'es aussi. S'il est découragé, tu es chaleureux et encourageant.
+- Tu célèbres les victoires, même petites ("C'est une excellente décision", "Tu vas dans la bonne direction").
+- Tu es honnête : si une idée a des risques, tu les mentionnes avec tact plutôt que de juste acquiescer.
+
+STYLE DE RÉPONSE :
+- Réponses de 150-350 mots maximum (format Telegram).
+- Utilise des retours à la ligne pour aérer, pas de murs de texte.
+- Emojis avec modération (1-3 par réponse max), toujours pertinents.
+- Commence parfois par reconnaître ce que ${firstName} a dit avant de répondre.
+- Langue : français par défaut, mais tu t'adaptes si ${firstName} écrit dans une autre langue.
+
+MÉMOIRE DU CONTEXTE :
+${businessContext ? `Ce que tu sais sur ${firstName} et son projet : ${businessContext}` : `Tu ne connais pas encore le projet de ${firstName} — pose des questions pour découvrir.`}
+
+RÈGLES ABSOLUES :
+- Ne jamais donner de conseils juridiques ou fiscaux définitifs (toujours recommander un professionnel).
+- Ne jamais inventer des chiffres ou statistiques précises sans les contextualiser.
+- Ne jamais être condescendant ou faire sentir ${firstName} incompétent.`;
+}
+
+// ─── Core AI call ─────────────────────────────────────────────────────────────
+
+async function askAI(
+  prompt: string,
+  firstName: string,
+  businessContext: string,
+  history: Array<{ role: "user" | "assistant"; content: string }> = []
+): Promise<string> {
+  const messages: OpenAI.ChatCompletionMessageParam[] = [
+    { role: "system", content: buildSystemPrompt(firstName, businessContext) },
+    ...history,
+    { role: "user", content: prompt },
+  ];
+
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     max_tokens: 600,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ],
+    messages,
   });
-  return response.choices[0]?.message?.content ?? "Désolé, je n'ai pas pu générer une réponse.";
+
+  return (
+    response.choices[0]?.message?.content ??
+    "Désolé, je n'ai pas pu générer une réponse."
+  );
 }
 
-// Conversation memory per user (simple in-memory, max 10 messages)
-const userConversations = new Map<number, Array<{ role: "user" | "assistant"; content: string }>>();
+// ─── Context extractor (runs silently to update business context) ─────────────
 
-export async function handleStart(): Promise<string> {
-  return `🚀 *Bienvenue sur Business Advisor AI !*
+async function extractContext(
+  userMessage: string,
+  assistantResponse: string
+): Promise<string> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 80,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Extrait en max 1-2 phrases les infos utiles sur le projet/business/situation de l'utilisateur (secteur, stade, objectif, défi). Si rien d'utile, réponds juste: 'rien'.",
+      },
+      {
+        role: "user",
+        content: `Message utilisateur: "${userMessage}"\nRéponse assistant: "${assistantResponse}"`,
+      },
+    ],
+  });
+  const extracted =
+    response.choices[0]?.message?.content?.trim() ?? "rien";
+  return extracted === "rien" ? "" : extracted;
+}
 
-Je suis ton assistant personnel en entrepreneuriat et stratégie d'entreprise, alimenté par l'IA.
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 
-Je peux t'aider à :
-💡 Générer des idées de business
-📈 Développer tes stratégies de croissance
-🎯 Améliorer ton marketing et tes ventes
-📚 Apprendre grâce à des études de cas réels
-🧠 Comprendre les concepts business clés
+export async function handleStart(firstName: string): Promise<string> {
+  return `👋 Salut ${firstName} ! Bienvenue sur *Business Advisor AI* — ton coach business personnel.
 
-Tape /help pour voir toutes mes commandes, ou pose-moi directement ta question !`;
+Je suis là pour t'accompagner sur l'entrepreneuriat, la stratégie, le marketing, les ventes, et tout ce qui fait qu'une entreprise réussit.
+
+Ce qui me différencie d'un simple bot : je retiens le contexte de notre conversation, je m'adapte à ta situation, et je te pose des questions pour mieux t'aider.
+
+📋 Tape /help pour voir toutes mes commandes.
+💬 Ou dis-moi simplement où tu en es avec ton projet — on commence là où tu es.
+
+*Alors, c'est quoi ton projet en ce moment ?* 🚀`;
 }
 
 export async function handleHelp(): Promise<string> {
-  return `📋 *Toutes mes commandes :*
+  return `📋 *Mes commandes :*
 
 💼 *Conseils & Stratégie*
 /advice — Conseil business du jour
@@ -52,121 +125,206 @@ export async function handleHelp(): Promise<string> {
 📊 *Apprentissage*
 /case — Analyse d'une entreprise connue
 /quiz — Lance un quiz business interactif
-/glossary — Explique un terme (ROI, EBITDA, CAC...)
-/news — Actualité économique importante
+/glossary [terme] — Explique un terme (ROI, EBITDA, CAC...)
+/news — Tendance économique importante
 
 ❓ *Interaction*
-/ask — Pose n'importe quelle question à l'IA
+/ask [question] — Pose n'importe quelle question
 /feedback — Envoie ton avis ou suggestion
 
-Tu peux aussi m'écrire directement sans commande ! 😊`;
+💬 Tu peux aussi m'écrire librement — je me souviens de notre conversation et j'adapte mes réponses à ta situation !`;
 }
 
-export async function handleAdvice(): Promise<string> {
+export async function handleAdvice(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Donne-moi un conseil business pratique et actionnable du jour pour un entrepreneur. Rends-le concret, avec un exemple d'application immédiate. Format : titre court en gras + explication + exemple."
+    `Donne à ${firstName} un conseil business pratique et actionnable du jour, adapté à son contexte si tu le connais. Rends-le concret avec une action immédiate possible. Termine par une question pour comprendre où il en est.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleIdea(): Promise<string> {
+export async function handleIdea(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Génère une idée de business originale et viable pour 2024-2025. Présente : le concept, le problème qu'il résout, la cible client, le modèle de revenus potentiel, et pourquoi c'est le bon moment pour le lancer."
+    `Génère une idée de business originale et viable pour 2024-2025, idéalement adaptée au contexte de ${firstName} si tu le connais. Présente : le concept, le problème résolu, la cible, le modèle de revenus, et pourquoi maintenant. Termine en demandant ce que ${firstName} en pense.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleStrategy(): Promise<string> {
+export async function handleStrategy(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Explique une stratégie de croissance ou de vente puissante utilisée par des entreprises à succès. Donne le nom de la stratégie, comment elle fonctionne, un exemple d'entreprise qui l'a appliquée, et comment un entrepreneur peut l'adapter."
+    `Explique à ${firstName} une stratégie de croissance ou de vente puissante, adaptée à son contexte si possible. Donne le nom, comment ça marche, un exemple réel, et comment l'adapter. Termine par une question sur sa situation actuelle.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleMarketing(): Promise<string> {
+export async function handleMarketing(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Donne un conseil marketing pratique et actionnable. Focus sur une tactique concrète qu'un entrepreneur peut appliquer cette semaine pour attirer plus de clients ou augmenter sa visibilité."
+    `Donne à ${firstName} un conseil marketing pratique et actionnable cette semaine. Focus sur une tactique concrète pour attirer plus de clients. Adapte au contexte de ${firstName} si tu le connais. Termine par une question sur sa cible ou son canal actuel.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleSales(): Promise<string> {
+export async function handleSales(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Partage une technique de vente efficace et éprouvée. Explique le principe psychologique derrière, donne un exemple de dialogue ou de script, et dis dans quel contexte l'utiliser."
+    `Partage avec ${firstName} une technique de vente efficace et éprouvée. Explique le principe psychologique, donne un exemple de dialogue, et dis dans quel contexte l'utiliser. Adapte à son secteur si connu. Termine par une question sur son processus de vente actuel.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleCase(): Promise<string> {
+export async function handleCase(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Analyse le parcours et le succès d'une entreprise connue (choisis une variée à chaque fois : startup tech, retail, service, etc.). Format : nom + secteur, contexte de départ, défi principal, stratégie clé qui a tout changé, résultats, leçon applicable."
+    `Analyse le succès d'une entreprise connue pour ${firstName} (varie les secteurs). Format : nom + secteur, contexte de départ, défi principal, stratégie clé, résultats, leçon applicable. Termine par demander à ${firstName} comment cette leçon s'applique à son projet.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleBook(): Promise<string> {
+export async function handleBook(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Recommande un livre sur le business, l'entrepreneuriat, le marketing ou le leadership. Donne : titre, auteur, pourquoi ce livre est incontournable, l'idée principale, et la leçon la plus précieuse qu'on en tire."
+    `Recommande un livre business à ${firstName}, idéalement adapté à son contexte. Donne : titre, auteur, pourquoi ce livre, l'idée principale, la leçon la plus précieuse. Termine par demander s'il a déjà lu des livres business marquants.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleQuote(): Promise<string> {
+export async function handleQuote(firstName: string): Promise<string> {
   return await askAI(
-    "Partage une citation inspirante d'un entrepreneur, investisseur ou leader d'entreprise célèbre. Donne la citation en italique, le nom et le contexte de la personne, puis explique pourquoi cette citation est puissante et comment l'appliquer."
+    `Partage une citation inspirante d'un entrepreneur ou leader célèbre avec ${firstName}. Donne la citation en italique, la personne, son contexte, et pourquoi cette citation est puissante aujourd'hui. Termine par demander ce que ça lui évoque.`,
+    firstName,
+    "",
+    []
   );
 }
 
-export async function handleQuiz(): Promise<string> {
+export async function handleQuiz(firstName: string): Promise<string> {
   return await askAI(
-    "Crée une question de quiz business avec 4 choix de réponses (A, B, C, D). La question doit porter sur un concept clé en entrepreneuriat, marketing, finance ou stratégie. Format : question, les 4 options, puis après une ligne vide indique la bonne réponse et explique pourquoi."
+    `Crée une question de quiz business pour ${firstName} avec 4 choix (A, B, C, D) sur un concept clé en entrepreneuriat, marketing, finance ou stratégie. Après les options, révèle la bonne réponse et explique pourquoi. Rends ça engageant !`,
+    firstName,
+    "",
+    []
   );
 }
 
-export async function handleGlossary(term?: string): Promise<string> {
+export async function handleGlossary(
+  firstName: string,
+  term?: string
+): Promise<string> {
   const subject = term
-    ? `Explique le terme business "${term}" de manière claire et accessible.`
-    : "Choisis un terme business important (ROI, EBITDA, CAC, LTV, MVP, Burn Rate, etc.) et explique-le.";
+    ? `Explique le terme business "${term}" à ${firstName}`
+    : `Choisis un terme business important (ROI, EBITDA, CAC, LTV, MVP, Burn Rate, etc.) et explique-le à ${firstName}`;
   return await askAI(
-    `${subject} Format : définition simple, formule si applicable, exemple concret, et pourquoi c'est important pour un entrepreneur.`
+    `${subject}. Format : définition simple, formule si applicable, exemple concret, pourquoi c'est important. Termine par demander si ${firstName} utilise déjà ce concept.`,
+    firstName,
+    "",
+    []
   );
 }
 
-export async function handleNews(): Promise<string> {
+export async function handleNews(
+  userId: number,
+  firstName: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
-    "Résume une tendance ou actualité économique/business importante de ces derniers mois. Explique ce que c'est, pourquoi ça compte pour les entrepreneurs, et quelles opportunités ou risques cela crée."
+    `Résume une tendance ou actualité économique/business importante pour ${firstName}. Explique ce que c'est, pourquoi ça compte pour les entrepreneurs, et quelles opportunités ou risques cela crée. Termine par demander si cette tendance impacte son secteur.`,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-4)
   );
 }
 
-export async function handleAsk(question: string): Promise<string> {
+export async function handleAsk(
+  userId: number,
+  firstName: string,
+  question: string
+): Promise<string> {
   if (!question.trim()) {
-    return "❓ Utilise /ask suivi de ta question.\n\nExemple : `/ask Comment fixer le prix de mon produit ?`";
+    return `❓ Utilise /ask suivi de ta question, ${firstName}.\n\nExemple : \`/ask Comment fixer le prix de mon produit ?\``;
   }
-  return await askAI(question);
+  const profile = getOrCreateProfile(userId, firstName);
+  return await askAI(
+    question,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-6)
+  );
 }
 
-export async function handleFreeText(userId: number, text: string): Promise<string> {
-  // Maintain conversation history
-  let history = userConversations.get(userId) ?? [];
-  history.push({ role: "user", content: text });
+export async function handleFreeText(
+  userId: number,
+  firstName: string,
+  text: string
+): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
 
-  // Keep last 10 messages to avoid token overflow
-  if (history.length > 10) {
-    history = history.slice(-10);
-  }
+  // Add user message to history
+  addToHistory(userId, "user", text);
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    max_tokens: 600,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      ...history,
-    ],
-  });
+  const reply = await askAI(
+    text,
+    firstName,
+    profile.businessContext,
+    profile.conversationHistory.slice(-10)
+  );
 
-  const reply = response.choices[0]?.message?.content ?? "Désolé, je n'ai pas pu répondre.";
-  history.push({ role: "assistant", content: reply });
-  userConversations.set(userId, history);
+  // Add assistant reply to history
+  addToHistory(userId, "assistant", reply);
+
+  // Silently extract and update business context (fire and forget)
+  extractContext(text, reply)
+    .then((ctx) => {
+      if (ctx) updateBusinessContext(userId, ctx);
+    })
+    .catch(() => {/* ignore */});
+
   return reply;
 }
 
-export async function handleFeedback(feedback: string): Promise<string> {
+export async function handleFeedback(
+  firstName: string,
+  feedback: string
+): Promise<string> {
   if (!feedback.trim()) {
-    return "📝 Envoie ton avis ou suggestion avec /feedback suivi de ton message.\n\nExemple : `/feedback J'adorerais un mode quiz quotidien !`";
+    return `📝 Envoie ton avis avec /feedback suivi de ton message, ${firstName}.\n\nExemple : \`/feedback J'adorerais un mode quiz quotidien !\``;
   }
-  // Just acknowledge — in a real app you'd save to DB
-  return `✅ Merci pour ton retour !\n\n_"${feedback}"_\n\nTon avis est précieux et nous aide à améliorer le bot. 🙏`;
+  return `✅ Merci ${firstName} pour ton retour !\n\n_"${feedback}"_\n\nC'est exactement ce genre de feedback qui aide à améliorer le bot. Je l'ai bien noté. 🙏`;
 }

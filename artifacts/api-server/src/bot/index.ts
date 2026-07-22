@@ -1,4 +1,4 @@
-import TelegramBot from "node-telegram-bot-api";
+import TelegramBot, { type Message } from "node-telegram-bot-api";
 import { logger } from "../lib/logger.js";
 import {
   handleStart,
@@ -18,6 +18,7 @@ import {
   handleFreeText,
   handleFeedback,
 } from "./handlers.js";
+import { getOrCreateProfile } from "./user-profiles.js";
 import { checkRateLimit, getRateLimitMessage } from "./rate-limiter.js";
 
 export function startBot(): void {
@@ -31,6 +32,14 @@ export function startBot(): void {
   const bot = new TelegramBot(token, { polling: true });
   logger.info("Telegram bot started (polling mode)");
 
+  function getUserInfo(msg: Message): { userId: number; firstName: string } {
+    const userId = msg.from?.id ?? msg.chat.id;
+    const firstName = msg.from?.first_name ?? "toi";
+    // Ensure profile exists with the right first name
+    getOrCreateProfile(userId, firstName);
+    return { userId, firstName };
+  }
+
   async function reply(chatId: number, text: string): Promise<void> {
     try {
       await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
@@ -43,11 +52,9 @@ export function startBot(): void {
     }
   }
 
-  /** For commands that don't call OpenAI (free, no rate limit) */
+  /** Free commands — no rate limit, no OpenAI call */
   async function withTyping(chatId: number, fn: () => Promise<string>): Promise<void> {
-    try {
-      await bot.sendChatAction(chatId, "typing");
-    } catch { /* ignore */ }
+    try { await bot.sendChatAction(chatId, "typing"); } catch { /* ignore */ }
     try {
       const text = await fn();
       await reply(chatId, text);
@@ -57,7 +64,7 @@ export function startBot(): void {
     }
   }
 
-  /** For commands that call OpenAI (rate limited) */
+  /** AI-powered commands — rate limited */
   async function withTypingLimited(
     chatId: number,
     userId: number,
@@ -73,100 +80,103 @@ export function startBot(): void {
 
   // /start — free
   bot.onText(/^\/start/, async (msg) => {
-    await withTyping(msg.chat.id, handleStart);
+    const { firstName } = getUserInfo(msg);
+    await withTyping(msg.chat.id, () => handleStart(firstName));
   });
 
   // /help — free
   bot.onText(/^\/help/, async (msg) => {
-    await withTyping(msg.chat.id, handleHelp);
+    await withTyping(msg.chat.id, () => handleHelp());
   });
 
   // /advice
   bot.onText(/^\/advice/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleAdvice);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleAdvice(userId, firstName));
   });
 
   // /idea
   bot.onText(/^\/idea/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleIdea);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleIdea(userId, firstName));
   });
 
   // /strategy
   bot.onText(/^\/strategy/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleStrategy);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleStrategy(userId, firstName));
   });
 
   // /marketing
   bot.onText(/^\/marketing/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleMarketing);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleMarketing(userId, firstName));
   });
 
   // /sales
   bot.onText(/^\/sales/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleSales);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleSales(userId, firstName));
   });
 
   // /case
   bot.onText(/^\/case/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleCase);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleCase(userId, firstName));
   });
 
   // /book
   bot.onText(/^\/book/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleBook);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleBook(userId, firstName));
   });
 
   // /quote
   bot.onText(/^\/quote/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleQuote);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleQuote(firstName));
   });
 
   // /quiz
   bot.onText(/^\/quiz/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleQuiz);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleQuiz(firstName));
   });
 
   // /glossary [term]
   bot.onText(/^\/glossary(?:\s+(.+))?$/, async (msg, match) => {
-    const userId = msg.from?.id ?? msg.chat.id;
+    const { userId, firstName } = getUserInfo(msg);
     const term = match?.[1]?.trim();
-    await withTypingLimited(msg.chat.id, userId, () => handleGlossary(term));
+    await withTypingLimited(msg.chat.id, userId, () => handleGlossary(firstName, term));
   });
 
   // /news
   bot.onText(/^\/news/, async (msg) => {
-    const userId = msg.from?.id ?? msg.chat.id;
-    await withTypingLimited(msg.chat.id, userId, handleNews);
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () => handleNews(userId, firstName));
   });
 
   // /ask [question]
   bot.onText(/^\/ask(?:\s+(.+))?$/, async (msg, match) => {
-    const userId = msg.from?.id ?? msg.chat.id;
+    const { userId, firstName } = getUserInfo(msg);
     const question = match?.[1]?.trim() ?? "";
-    await withTypingLimited(msg.chat.id, userId, () => handleAsk(question));
+    await withTypingLimited(msg.chat.id, userId, () => handleAsk(userId, firstName, question));
   });
 
-  // /feedback — free (no OpenAI call)
+  // /feedback — free
   bot.onText(/^\/feedback(?:\s+(.+))?$/, async (msg, match) => {
+    const { firstName } = getUserInfo(msg);
     const feedback = match?.[1]?.trim() ?? "";
-    await withTyping(msg.chat.id, () => handleFeedback(feedback));
+    await withTyping(msg.chat.id, () => handleFeedback(firstName, feedback));
   });
 
   // Free text — rate limited
   bot.on("message", async (msg) => {
     if (!msg.text || msg.text.startsWith("/")) return;
-    const chatId = msg.chat.id;
-    const userId = msg.from?.id ?? chatId;
-    await withTypingLimited(chatId, userId, () => handleFreeText(userId, msg.text!));
+    const { userId, firstName } = getUserInfo(msg);
+    await withTypingLimited(msg.chat.id, userId, () =>
+      handleFreeText(userId, firstName, msg.text!)
+    );
   });
 
   bot.on("polling_error", (err) => {
