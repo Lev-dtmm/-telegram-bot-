@@ -49,8 +49,13 @@ export function startBot(): void {
     } catch {
       // ignore
     }
-    const text = await fn();
-    await reply(chatId, text);
+    try {
+      const text = await fn();
+      await reply(chatId, text);
+    } catch (err) {
+      logger.error({ err }, "Bot handler error");
+      await reply(chatId, "⚠️ Une erreur s'est produite. Réessaie dans quelques instants.");
+    }
   }
 
   // /start
