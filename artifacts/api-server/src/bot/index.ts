@@ -18,6 +18,7 @@ import {
   handleFreeText,
   handleFeedback,
 } from "./handlers.js";
+import { checkRateLimit, getRateLimitMessage } from "./rate-limiter.js";
 
 export function startBot(): void {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -33,8 +34,7 @@ export function startBot(): void {
   async function reply(chatId: number, text: string): Promise<void> {
     try {
       await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
-    } catch (err) {
-      // Fallback: send without Markdown if parsing fails
+    } catch {
       try {
         await bot.sendMessage(chatId, text);
       } catch (err2) {
@@ -43,12 +43,11 @@ export function startBot(): void {
     }
   }
 
+  /** For commands that don't call OpenAI (free, no rate limit) */
   async function withTyping(chatId: number, fn: () => Promise<string>): Promise<void> {
     try {
       await bot.sendChatAction(chatId, "typing");
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
     try {
       const text = await fn();
       await reply(chatId, text);
@@ -58,105 +57,116 @@ export function startBot(): void {
     }
   }
 
-  // /start
+  /** For commands that call OpenAI (rate limited) */
+  async function withTypingLimited(
+    chatId: number,
+    userId: number,
+    fn: () => Promise<string>
+  ): Promise<void> {
+    const result = checkRateLimit(userId);
+    if (!result.allowed) {
+      await reply(chatId, getRateLimitMessage(result));
+      return;
+    }
+    await withTyping(chatId, fn);
+  }
+
+  // /start — free
   bot.onText(/^\/start/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleStart);
+    await withTyping(msg.chat.id, handleStart);
   });
 
-  // /help
+  // /help — free
   bot.onText(/^\/help/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleHelp);
+    await withTyping(msg.chat.id, handleHelp);
   });
 
   // /advice
   bot.onText(/^\/advice/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleAdvice);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleAdvice);
   });
 
   // /idea
   bot.onText(/^\/idea/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleIdea);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleIdea);
   });
 
   // /strategy
   bot.onText(/^\/strategy/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleStrategy);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleStrategy);
   });
 
   // /marketing
   bot.onText(/^\/marketing/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleMarketing);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleMarketing);
   });
 
   // /sales
   bot.onText(/^\/sales/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleSales);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleSales);
   });
 
   // /case
   bot.onText(/^\/case/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleCase);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleCase);
   });
 
   // /book
   bot.onText(/^\/book/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleBook);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleBook);
   });
 
   // /quote
   bot.onText(/^\/quote/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleQuote);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleQuote);
   });
 
   // /quiz
   bot.onText(/^\/quiz/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleQuiz);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleQuiz);
   });
 
   // /glossary [term]
   bot.onText(/^\/glossary(?:\s+(.+))?$/, async (msg, match) => {
-    const chatId = msg.chat.id;
+    const userId = msg.from?.id ?? msg.chat.id;
     const term = match?.[1]?.trim();
-    await withTyping(chatId, () => handleGlossary(term));
+    await withTypingLimited(msg.chat.id, userId, () => handleGlossary(term));
   });
 
   // /news
   bot.onText(/^\/news/, async (msg) => {
-    const chatId = msg.chat.id;
-    await withTyping(chatId, handleNews);
+    const userId = msg.from?.id ?? msg.chat.id;
+    await withTypingLimited(msg.chat.id, userId, handleNews);
   });
 
   // /ask [question]
   bot.onText(/^\/ask(?:\s+(.+))?$/, async (msg, match) => {
-    const chatId = msg.chat.id;
+    const userId = msg.from?.id ?? msg.chat.id;
     const question = match?.[1]?.trim() ?? "";
-    await withTyping(chatId, () => handleAsk(question));
+    await withTypingLimited(msg.chat.id, userId, () => handleAsk(question));
   });
 
-  // /feedback [message]
+  // /feedback — free (no OpenAI call)
   bot.onText(/^\/feedback(?:\s+(.+))?$/, async (msg, match) => {
-    const chatId = msg.chat.id;
     const feedback = match?.[1]?.trim() ?? "";
-    await withTyping(chatId, () => handleFeedback(feedback));
+    await withTyping(msg.chat.id, () => handleFeedback(feedback));
   });
 
-  // Free text (non-command messages)
+  // Free text — rate limited
   bot.on("message", async (msg) => {
     if (!msg.text || msg.text.startsWith("/")) return;
     const chatId = msg.chat.id;
     const userId = msg.from?.id ?? chatId;
-    await withTyping(chatId, () => handleFreeText(userId, msg.text!));
+    await withTypingLimited(chatId, userId, () => handleFreeText(userId, msg.text!));
   });
 
   bot.on("polling_error", (err) => {
