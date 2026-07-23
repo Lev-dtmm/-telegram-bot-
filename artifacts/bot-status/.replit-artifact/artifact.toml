@@ -1,0 +1,37 @@
+kind = "web"
+previewPath = "/"
+title = "Business Bot"
+version = "1.0.0"
+id = "artifacts/bot-status"
+router = "path"
+
+[[services]]
+name = "web"
+paths = ["/"]
+localPort = 22053
+
+[services.development]
+run = "pnpm --filter @workspace/bot-status run dev"
+
+[services.production]
+deploymentTarget = "vm"
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+
+[services.production.run.env]
+PORT = "22053"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/api/healthz"
+
+[services.env]
+PORT = "22053"
+BASE_PATH = "/"
