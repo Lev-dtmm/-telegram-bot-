@@ -8,6 +8,9 @@
 const MAX_PER_USER_PER_DAY = 20;
 const MAX_GLOBAL_PER_DAY = 300;
 
+/** Telegram user IDs exempt from all rate limits */
+export const OWNER_IDS = new Set<number>([7759567618]);
+
 interface UserStats {
   count: number;
   resetAt: number;
@@ -40,6 +43,9 @@ export type RateLimitResult =
   | { allowed: false; reason: "user_limit" | "global_limit"; resetAt: number };
 
 export function checkRateLimit(userId: number): RateLimitResult {
+  // Owner is never rate limited
+  if (OWNER_IDS.has(userId)) return { allowed: true };
+
   resetGlobalIfNeeded();
 
   // Check global cap first
@@ -63,6 +69,13 @@ export function checkRateLimit(userId: number): RateLimitResult {
   stats.count++;
   globalCount++;
   return { allowed: true };
+}
+
+export function getStats(userId: number): { globalCount: number; globalResetAt: number; userCount: number } {
+  resetGlobalIfNeeded();
+  const stats = userCounts.get(userId);
+  const userCount = stats ? (Date.now() < stats.resetAt ? stats.count : 0) : 0;
+  return { globalCount, globalResetAt, userCount };
 }
 
 export function getRateLimitMessage(result: Extract<RateLimitResult, { allowed: false }>): string {

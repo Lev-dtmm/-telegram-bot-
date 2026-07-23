@@ -17,9 +17,10 @@ import {
   handleAsk,
   handleFreeText,
   handleFeedback,
+  handleStats,
 } from "./handlers.js";
 import { getOrCreateProfile } from "./user-profiles.js";
-import { checkRateLimit, getRateLimitMessage } from "./rate-limiter.js";
+import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS } from "./rate-limiter.js";
 
 export function startBot(): void {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -80,8 +81,20 @@ export function startBot(): void {
 
   // /start — free
   bot.onText(/^\/start/, async (msg) => {
-    const { firstName } = getUserInfo(msg);
-    await withTyping(msg.chat.id, () => handleStart(firstName));
+    const { userId, firstName } = getUserInfo(msg);
+    const isOwner = OWNER_IDS.has(userId);
+    await withTyping(msg.chat.id, () => handleStart(firstName, isOwner));
+  });
+
+  // /stats — owner only
+  bot.onText(/^\/stats/, async (msg) => {
+    const { userId } = getUserInfo(msg);
+    if (!OWNER_IDS.has(userId)) {
+      await reply(msg.chat.id, "❌ Commande réservée au créateur du bot.");
+      return;
+    }
+    const { globalCount, globalResetAt, userCount } = getStats(userId);
+    await reply(msg.chat.id, handleStats(globalCount, globalResetAt, userCount));
   });
 
   // /help — free

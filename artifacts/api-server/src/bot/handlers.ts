@@ -95,7 +95,18 @@ async function extractContext(
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-export async function handleStart(firstName: string): Promise<string> {
+export async function handleStart(firstName: string, isOwner = false): Promise<string> {
+  if (isOwner) {
+    return `🔑 Content de te revoir, *${firstName}* — mon créateur !
+
+Tu as un accès illimité à toutes mes fonctionnalités, sans aucune restriction.
+
+Commandes exclusives :
+• /stats — Voir l'activité du bot en temps réel
+
+Tout le reste fonctionne normalement. Qu'est-ce qu'on construit aujourd'hui ? 💪`;
+  }
+
   return `👋 Salut ${firstName} ! Bienvenue sur *Business Advisor AI* — ton coach business personnel.
 
 Je suis là pour t'accompagner sur l'entrepreneuriat, la stratégie, le marketing, les ventes, et tout ce qui fait qu'une entreprise réussit.
@@ -317,6 +328,15 @@ export async function handleFreeText(
     .catch(() => {/* ignore */});
 
   return reply;
+}
+
+export function handleStats(globalCount: number, globalResetAt: number, userCount: number): string {
+  const hoursLeft = Math.ceil((globalResetAt - Date.now()) / (60 * 60 * 1000));
+  return `📊 *Statistiques du bot*
+
+🌍 Messages globaux aujourd'hui : *${globalCount}* / 300
+👤 Tes messages aujourd'hui : *${userCount}* (illimité pour toi)
+🔄 Remise à zéro dans : ~${hoursLeft}h`;
 }
 
 export async function handleFeedback(
