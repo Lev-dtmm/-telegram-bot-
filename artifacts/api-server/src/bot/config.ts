@@ -2,7 +2,15 @@
 export const creator = "@Lev_dtmm";
 export const creatorTelegramId = 7759567618;
 
-export const thinkingStickerId = process.env["THINKING_STICKER_ID"];
+let thinkingStickerId = process.env["THINKING_STICKER_ID"];
+
+export function getThinkingStickerId(): string | undefined {
+  return thinkingStickerId;
+}
+
+export function setThinkingStickerId(fileId: string): void {
+  thinkingStickerId = fileId;
+}
 
 export const languageOptions = [
   { code: "es", label: "🇪🇸 Español" },

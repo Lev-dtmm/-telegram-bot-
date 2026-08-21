@@ -21,7 +21,7 @@ import {
 } from "./handlers.js";
 import { getOrCreateProfile, getUserLanguage, setRoyCohnMode, setUserLanguage } from "./user-profiles.js";
 import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS } from "./rate-limiter.js";
-import { creator, creatorTelegramId, languageOptions, thinkingStickerId, type SupportedLanguage } from "./config.js";
+import { creator, creatorTelegramId, languageOptions, getThinkingStickerId, setThinkingStickerId, type SupportedLanguage } from "./config.js";
 import { isDangerousMessage, safetyResponse } from "./safety.js";
 
 export function startBot(): void {
@@ -44,12 +44,11 @@ export function startBot(): void {
   }
 
   async function reply(chatId: number, text: string): Promise<void> {
-    const signedText = `${text}\n\n— Business Advisor AI · ${creator}`;
     try {
-      await bot.sendMessage(chatId, signedText, { parse_mode: "Markdown" });
+      await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
     } catch {
       try {
-        await bot.sendMessage(chatId, signedText);
+        await bot.sendMessage(chatId, text);
       } catch (err2) {
         logger.error({ err: err2 }, "Failed to send Telegram message");
       }
@@ -85,8 +84,9 @@ export function startBot(): void {
       await reply(chatId, getRateLimitMessage(result));
       return;
     }
-    if (thinkingStickerId) {
-      try { await bot.sendSticker(chatId, thinkingStickerId); } catch (err) {
+    const stickerId = getThinkingStickerId();
+    if (stickerId) {
+      try { await bot.sendSticker(chatId, stickerId); } catch (err) {
         logger.warn({ err }, "Thinking sticker could not be sent");
       }
     } else {
@@ -119,6 +119,17 @@ export function startBot(): void {
 
   bot.onText(/^\/creator/, async (msg) => {
     await reply(msg.chat.id, `This bot is created by ${creator}.`);
+  });
+
+  // Owner setup: send any sticker to the bot to retrieve and activate its file_id.
+  bot.on("message", async (msg) => {
+    if (!msg.sticker || msg.from?.id !== creatorTelegramId) return;
+    const fileId = msg.sticker.file_id;
+    setThinkingStickerId(fileId);
+    await reply(
+      msg.chat.id,
+      `✅ Sticker activé !\n\nIdentifiant : \`${fileId}\`\n\nPour le garder après un redémarrage ou sur Hetzner, ajoute cette variable d'environnement :\n\`THINKING_STICKER_ID=${fileId}\``,
+    );
   });
 
   bot.onText(/^\/terms/, async (msg) => {
