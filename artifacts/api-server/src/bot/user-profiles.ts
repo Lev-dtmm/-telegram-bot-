@@ -5,6 +5,8 @@
 
 export interface UserProfile {
   firstName: string;
+  language: "es" | "fr" | "de" | "en" | "zh" | "ru";
+  royCohnMode: boolean;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   businessContext: string; // accumulated context about the user's business
   messageCount: number;
@@ -17,6 +19,8 @@ export function getOrCreateProfile(userId: number, firstName?: string): UserProf
   if (!profile) {
     profile = {
       firstName: firstName ?? "toi",
+      language: "en",
+      royCohnMode: false,
       conversationHistory: [],
       businessContext: "",
       messageCount: 0,
@@ -28,6 +32,19 @@ export function getOrCreateProfile(userId: number, firstName?: string): UserProf
     profile.firstName = firstName;
   }
   return profile;
+}
+
+export function setUserLanguage(userId: number, language: UserProfile["language"]): void {
+  const profile = getOrCreateProfile(userId);
+  profile.language = language;
+}
+
+export function getUserLanguage(userId: number): UserProfile["language"] {
+  return getOrCreateProfile(userId).language;
+}
+
+export function setRoyCohnMode(userId: number, enabled: boolean): void {
+  getOrCreateProfile(userId).royCohnMode = enabled;
 }
 
 export function addToHistory(

@@ -19,8 +19,10 @@ import {
   handleFeedback,
   handleStats,
 } from "./handlers.js";
-import { getOrCreateProfile } from "./user-profiles.js";
+import { getOrCreateProfile, getUserLanguage, setRoyCohnMode, setUserLanguage } from "./user-profiles.js";
 import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS } from "./rate-limiter.js";
+import { creator, creatorTelegramId, languageOptions, thinkingStickerId, type SupportedLanguage } from "./config.js";
+import { isDangerousMessage, safetyResponse } from "./safety.js";
 
 export function startBot(): void {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -35,18 +37,19 @@ export function startBot(): void {
 
   function getUserInfo(msg: Message): { userId: number; firstName: string } {
     const userId = msg.from?.id ?? msg.chat.id;
-    const firstName = msg.from?.first_name ?? "toi";
+    const firstName = msg.from?.first_name ?? "there";
     // Ensure profile exists with the right first name
     getOrCreateProfile(userId, firstName);
     return { userId, firstName };
   }
 
   async function reply(chatId: number, text: string): Promise<void> {
+    const signedText = `${text}\n\n— Business Advisor AI · ${creator}`;
     try {
-      await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+      await bot.sendMessage(chatId, signedText, { parse_mode: "Markdown" });
     } catch {
       try {
-        await bot.sendMessage(chatId, text);
+        await bot.sendMessage(chatId, signedText);
       } catch (err2) {
         logger.error({ err: err2 }, "Failed to send Telegram message");
       }
@@ -69,12 +72,25 @@ export function startBot(): void {
   async function withTypingLimited(
     chatId: number,
     userId: number,
-    fn: () => Promise<string>
+    fn: () => Promise<string>,
+    rawText = ""
   ): Promise<void> {
+    const language = getUserLanguage(userId);
+    if (isDangerousMessage(rawText)) {
+      await reply(chatId, safetyResponse(language));
+      return;
+    }
     const result = checkRateLimit(userId);
     if (!result.allowed) {
       await reply(chatId, getRateLimitMessage(result));
       return;
+    }
+    if (thinkingStickerId) {
+      try { await bot.sendSticker(chatId, thinkingStickerId); } catch (err) {
+        logger.warn({ err }, "Thinking sticker could not be sent");
+      }
+    } else {
+      try { await bot.sendMessage(chatId, "💸"); } catch { /* ignore */ }
     }
     await withTyping(chatId, fn);
   }
@@ -84,6 +100,40 @@ export function startBot(): void {
     const { userId, firstName } = getUserInfo(msg);
     const isOwner = OWNER_IDS.has(userId);
     await withTyping(msg.chat.id, () => handleStart(firstName, isOwner));
+    await bot.sendMessage(msg.chat.id, `Choose your language / Choisis ta langue :\n\n— Business Advisor AI · ${creator}`, {
+      reply_markup: { inline_keyboard: languageOptions.map((option) => [
+        { text: option.label, callback_data: `lang:${option.code}` },
+      ]) },
+    });
+  });
+
+  bot.on("callback_query", async (query) => {
+    if (!query.message || !query.data?.startsWith("lang:")) return;
+    const code = query.data.slice(5) as SupportedLanguage;
+    if (!languageOptions.some((option) => option.code === code)) return;
+    const userId = query.from.id;
+    setUserLanguage(userId, code);
+    await bot.answerCallbackQuery(query.id, { text: "Language saved" });
+    await reply(query.message.chat.id, languageConfirmation(code));
+  });
+
+  bot.onText(/^\/creator/, async (msg) => {
+    await reply(msg.chat.id, `This bot is created by ${creator}.`);
+  });
+
+  bot.onText(/^\/terms/, async (msg) => {
+    await reply(msg.chat.id, `Terms & privacy notice:
+
+• General educational information only — not medical, legal, tax, or financial advice.
+• Never share passwords, payment details, or highly sensitive information.
+• Telegram and OpenAI process messages to deliver this service.
+• Conversation context is kept in memory only for personalization and is lost when the service restarts.
+• For deletion or privacy questions, contact ${creator}.
+• In immediate danger, contact local emergency services.`);
+  });
+
+  bot.onText(/^\/privacy/, async (msg) => {
+    await reply(msg.chat.id, `Privacy: we minimize data and do not needlessly store conversations in a database. Telegram and OpenAI may process messages to provide replies. Do not send secrets. Contact ${creator} for privacy questions or deletion requests.`);
   });
 
   // /stats — owner only
@@ -173,7 +223,7 @@ export function startBot(): void {
   bot.onText(/^\/ask(?:\s+(.+))?$/, async (msg, match) => {
     const { userId, firstName } = getUserInfo(msg);
     const question = match?.[1]?.trim() ?? "";
-    await withTypingLimited(msg.chat.id, userId, () => handleAsk(userId, firstName, question));
+    await withTypingLimited(msg.chat.id, userId, () => handleAsk(userId, firstName, question), question);
   });
 
   // /feedback — free
@@ -187,6 +237,16 @@ export function startBot(): void {
   bot.on("message", async (msg) => {
     if (!msg.text || msg.text.startsWith("/")) return;
     const { userId, firstName } = getUserInfo(msg);
+    const language = getUserLanguage(userId);
+    if (isDangerousMessage(msg.text)) {
+      await reply(msg.chat.id, safetyResponse(language));
+      return;
+    }
+    if (msg.text.toLowerCase().includes("roy cohn") && userId === creatorTelegramId) {
+      setRoyCohnMode(userId, true);
+      await reply(msg.chat.id, "Secret mode activated: hard-nosed advocate voice enabled.");
+      return;
+    }
     await withTypingLimited(msg.chat.id, userId, () =>
       handleFreeText(userId, firstName, msg.text!)
     );
@@ -195,4 +255,16 @@ export function startBot(): void {
   bot.on("polling_error", (err) => {
     logger.error({ err }, "Telegram polling error");
   });
+}
+
+function languageConfirmation(language: SupportedLanguage): string {
+  const messages: Record<SupportedLanguage, string> = {
+    en: "English selected. I’ll adapt all future replies to you.",
+    fr: "Français sélectionné. Toutes mes prochaines réponses s'adapteront à toi.",
+    es: "Español seleccionado. Adaptaré todas mis respuestas a ti.",
+    de: "Deutsch ausgewählt. Meine Antworten passen sich an dich an.",
+    zh: "已选择中文。之后我会使用中文回复。",
+    ru: "Русский выбран. Дальше я буду отвечать на русском.",
+  };
+  return messages[language];
 }

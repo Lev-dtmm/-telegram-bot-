@@ -1,0 +1,1 @@
+- [Bot security and deployment](security-and-deployment.md) — always-on hosting, honest privacy wording, and pre-AI safety screening.
