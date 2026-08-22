@@ -136,6 +136,32 @@ export function startBot(): void {
     await reply(query.message.chat.id, languageConfirmation(code));
   });
 
+  bot.onText(/^\/language$/, async (msg) => {
+    await bot.sendMessage(msg.chat.id, "Choose your language / Choisis ta langue :", {
+      reply_markup: {
+        inline_keyboard: languageOptions.map((option) => [
+          { text: option.label, callback_data: `lang:${option.code}` },
+        ]),
+      },
+    });
+  });
+
+  const languageShortcuts: Record<string, SupportedLanguage> = {
+    "/fr": "fr",
+    "/en": "en",
+    "/es": "es",
+    "/de": "de",
+    "/zh": "zh",
+    "/ru": "ru",
+  };
+  for (const [command, language] of Object.entries(languageShortcuts)) {
+    bot.onText(new RegExp(`^\\${command}$`), async (msg) => {
+      const userId = msg.from?.id ?? msg.chat.id;
+      setUserLanguage(userId, language);
+      await reply(msg.chat.id, languageConfirmation(language));
+    });
+  }
+
   bot.onText(/^\/creator/, async (msg) => {
     await reply(msg.chat.id, `This bot is created by ${creator}.`);
   });
