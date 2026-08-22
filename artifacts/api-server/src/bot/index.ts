@@ -253,6 +253,9 @@ export function startBot(): void {
   bot.onText(/^\/ask(?:\s+(.+))?$/, async (msg, match) => {
     const { userId, firstName } = getUserInfo(msg);
     const question = match?.[1]?.trim() ?? "";
+    if (question.toLowerCase().includes("roy cohn")) {
+      setRoyCohnMode(userId, true);
+    }
     await withTypingLimited(msg.chat.id, userId, () => handleAsk(userId, firstName, question), question);
   });
 
@@ -272,10 +275,8 @@ export function startBot(): void {
       await reply(msg.chat.id, safetyResponse(language));
       return;
     }
-    if (msg.text.toLowerCase().includes("roy cohn") && userId === creatorTelegramId) {
+    if (msg.text.toLowerCase().includes("roy cohn")) {
       setRoyCohnMode(userId, true);
-      await reply(msg.chat.id, "Secret mode activated: hard-nosed advocate voice enabled.");
-      return;
     }
     await withTypingLimited(msg.chat.id, userId, () =>
       handleFreeText(userId, firstName, msg.text!)
