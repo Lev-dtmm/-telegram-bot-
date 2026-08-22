@@ -34,6 +34,14 @@ export function startBot(): void {
 
   const bot = new TelegramBot(token, { polling: true });
   logger.info("Telegram bot started (polling mode)");
+  void bot.setMyCommands([
+    { command: "start", description: "Start the assistant" },
+    { command: "help", description: "Show all available commands" },
+    { command: "advice", description: "Get business advice" },
+    { command: "idea", description: "Generate a business idea" },
+    { command: "ask", description: "Ask the AI a question" },
+    { command: "feedback", description: "Send feedback" },
+  ]).catch((err) => logger.warn({ err }, "Could not set Telegram command menu"));
 
   function getUserInfo(msg: Message): { userId: number; firstName: string } {
     const userId = msg.from?.id ?? msg.chat.id;
@@ -101,14 +109,25 @@ export function startBot(): void {
     const isOwner = OWNER_IDS.has(userId);
     await withTyping(msg.chat.id, () => handleStart(firstName, isOwner));
     await bot.sendMessage(msg.chat.id, `Choose your language / Choisis ta langue :\n\n— Business Advisor AI · ${creator}`, {
-      reply_markup: { inline_keyboard: languageOptions.map((option) => [
-        { text: option.label, callback_data: `lang:${option.code}` },
-      ]) },
+      reply_markup: {
+        inline_keyboard: [
+          ...languageOptions.map((option) => [
+            { text: option.label, callback_data: `lang:${option.code}` },
+          ]),
+          [{ text: "📋 Help / Aide", callback_data: "show_help" }],
+        ],
+      },
     });
   });
 
   bot.on("callback_query", async (query) => {
-    if (!query.message || !query.data?.startsWith("lang:")) return;
+    if (!query.message || !query.data) return;
+    if (query.data === "show_help") {
+      await bot.answerCallbackQuery(query.id);
+      await reply(query.message.chat.id, await handleHelp());
+      return;
+    }
+    if (!query.data.startsWith("lang:")) return;
     const code = query.data.slice(5) as SupportedLanguage;
     if (!languageOptions.some((option) => option.code === code)) return;
     const userId = query.from.id;
