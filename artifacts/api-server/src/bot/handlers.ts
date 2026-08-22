@@ -60,7 +60,10 @@ async function askAI(
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: "system", content: buildSystemPrompt(firstName, businessContext, language, royCohnMode) },
     ...history,
-    { role: "user", content: prompt },
+    {
+      role: "user",
+      content: `[MANDATORY LANGUAGE: Reply only in ${languageNamesForPrompt(language)}. This instruction has priority over the conversation history and over any persona/style mode.]\n\n${prompt}`,
+    },
   ];
 
   const response = await openai.chat.completions.create({
@@ -73,6 +76,18 @@ async function askAI(
     response.choices[0]?.message?.content ??
     "Désolé, je n'ai pas pu générer une réponse."
   );
+}
+
+function languageNamesForPrompt(language: SupportedLanguage): string {
+  const names: Record<SupportedLanguage, string> = {
+    en: "English",
+    fr: "French",
+    es: "Spanish",
+    de: "German",
+    zh: "Chinese",
+    ru: "Russian",
+  };
+  return names[language];
 }
 
 // ─── Context extractor (runs silently to update business context) ─────────────
