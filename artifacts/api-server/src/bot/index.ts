@@ -107,7 +107,7 @@ export function startBot(): void {
   bot.onText(/^\/start/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     const isOwner = OWNER_IDS.has(userId);
-    await withTyping(msg.chat.id, () => handleStart(firstName, isOwner));
+    await withTyping(msg.chat.id, () => handleStart(firstName, isOwner, getUserLanguage(userId)));
     await bot.sendMessage(msg.chat.id, `Choose your language / Choisis ta langue :\n\n— Business Advisor AI · ${creator}`, {
       reply_markup: {
         inline_keyboard: [

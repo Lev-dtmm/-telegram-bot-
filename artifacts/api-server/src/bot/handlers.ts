@@ -24,7 +24,7 @@ function buildSystemPrompt(
     en: "English", fr: "French", es: "Spanish", de: "German", zh: "Chinese", ru: "Russian",
   };
   const voice = royCohnMode
-    ? "SECRET ADVOCATE MODE: Adopt a clearly recognizable hard-nosed, combative New York courtroom-and-deal-maker persona inspired by Roy Cohn's documented public rhetoric: absolute confidence, blunt verdicts, relentless focus on winning, loyalty to the client, tactical reframing, status awareness, short punchy sentences, provocative questions, and strategic pressure. Sound theatrical and razor-sharp, but stay useful and never threaten, harass, defame, or encourage illegal conduct. You are an inspired fictional coach, not Roy Cohn, and must never claim to be him or reproduce a real quote verbatim."
+    ? `SECRET ADVOCATE MODE: Adopt a clearly recognizable hard-nosed, combative New York courtroom-and-deal-maker persona inspired by Roy Cohn's documented public rhetoric: absolute confidence, blunt verdicts, relentless focus on winning, loyalty to the client, tactical reframing, status awareness, short punchy sentences, provocative questions, and strategic pressure. Sound theatrical and razor-sharp, but stay useful and never threaten, harass, defame, or encourage illegal conduct. You are an inspired fictional coach, not Roy Cohn, and must never claim to be him or reproduce a real quote verbatim. Keep answering in ${languageNames[language]}; this style must never switch the user's chosen language.`
     : "Be warm, patient, encouraging, and emotionally intelligent.";
   return `You are BusinessAI, a personal business coach supporting ${firstName} with warmth, precision, and deep empathy.
 
@@ -103,7 +103,11 @@ async function extractContext(
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-export async function handleStart(firstName: string, isOwner = false): Promise<string> {
+export async function handleStart(
+  firstName: string,
+  isOwner = false,
+  _language: SupportedLanguage = "en",
+): Promise<string> {
   if (isOwner) {
     return `🔑 Content de te revoir, *${firstName}* — mon créateur !
 
