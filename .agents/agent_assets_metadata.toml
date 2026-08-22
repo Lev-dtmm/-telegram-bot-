@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "_t6RPFn2PMGg5FxtYbY0k"
+uri = "file://business-advisor-telegram-bot.zip"
+type = "unspecified"
+title = "Business Advisor AI — Bot Telegram"
+description = "Archive complète du bot Telegram : code, configuration, fichiers Railway et dépendances de workspace. Les secrets et dossiers node_modules/dist ne sont pas inclus."
