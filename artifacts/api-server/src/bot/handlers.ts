@@ -5,6 +5,15 @@ import {
   updateBusinessContext,
 } from "./user-profiles.js";
 import type { SupportedLanguage } from "./config.js";
+import {
+  getHelpText,
+  getFeedbackPrompt,
+  getFeedbackThanks,
+  getStatsText,
+  getStartOwnerText,
+  getStartUserText,
+  getAskEmptyPrompt,
+} from "./config.js";
 
 if (!process.env["OPENAI_API_KEY"]) {
   throw new Error("OPENAI_API_KEY environment variable is required.");
@@ -13,18 +22,20 @@ if (!process.env["OPENAI_API_KEY"]) {
 const openai = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
 
 // ─── System prompt ────────────────────────────────────────────────────────────
+// Roy Cohn is now the bot's BASE persona (what sets it apart from generic
+// consulting bots), not a hidden mode. It's always on unless explicitly false.
 
 function buildSystemPrompt(
   firstName: string,
   businessContext: string,
   language: SupportedLanguage = "en",
-  royCohnMode = false,
+  royCohnMode = true,
 ): string {
   const languageNames: Record<SupportedLanguage, string> = {
     en: "English", fr: "French", es: "Spanish", de: "German", zh: "Chinese", ru: "Russian",
   };
   const voice = royCohnMode
-    ? `SECRET ADVOCATE MODE: Adopt a clearly recognizable hard-nosed, combative New York courtroom-and-deal-maker persona inspired by Roy Cohn's documented public rhetoric: absolute confidence, blunt verdicts, relentless focus on winning, loyalty to the client, tactical reframing, status awareness, short punchy sentences, provocative questions, and strategic pressure. Sound theatrical and razor-sharp, but stay useful and never threaten, harass, defame, or encourage illegal conduct. You are an inspired fictional coach, not Roy Cohn, and must never claim to be him or reproduce a real quote verbatim. Keep answering in ${languageNames[language]}; this style must never switch the user's chosen language.`
+    ? `CORE PERSONA: Adopt a clearly recognizable hard-nosed, combative New York courtroom-and-deal-maker persona inspired by Roy Cohn's documented public rhetoric: absolute confidence, blunt verdicts, relentless focus on winning, loyalty to the client, tactical reframing, status awareness, short punchy sentences, provocative questions, and strategic pressure. Sound theatrical and razor-sharp, but stay useful and never threaten, harass, defame, or encourage illegal conduct. You are an inspired fictional coach, not Roy Cohn, and must never claim to be him or reproduce a real quote verbatim. Keep answering in ${languageNames[language]}; this style must never switch the user's chosen language.`
     : "Be warm, patient, encouraging, and emotionally intelligent.";
   return `You are BusinessAI, a personal business coach supporting ${firstName} with warmth, precision, and deep empathy.
 
@@ -55,7 +66,7 @@ async function askAI(
   businessContext: string,
   history: Array<{ role: "user" | "assistant"; content: string }> = [],
   language: SupportedLanguage = "en",
-  royCohnMode = false
+  royCohnMode = true
 ): Promise<string> {
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: "system", content: buildSystemPrompt(firstName, businessContext, language, royCohnMode) },
@@ -121,56 +132,16 @@ async function extractContext(
 export async function handleStart(
   firstName: string,
   isOwner = false,
-  _language: SupportedLanguage = "en",
+  language: SupportedLanguage = "en",
 ): Promise<string> {
   if (isOwner) {
-    return `🔑 Content de te revoir, *${firstName}* — mon créateur !
-
-Tu as un accès illimité à toutes mes fonctionnalités, sans aucune restriction.
-
-Commandes exclusives :
-• /stats — Voir l'activité du bot en temps réel
-
-Tout le reste fonctionne normalement. Qu'est-ce qu'on construit aujourd'hui ? 💪`;
+    return getStartOwnerText(firstName, language);
   }
-
-  return `👋 Salut ${firstName} ! Bienvenue sur *Business Advisor AI* — ton coach business personnel.
-
-Je suis là pour t'accompagner sur l'entrepreneuriat, la stratégie, le marketing, les ventes, et tout ce qui fait qu'une entreprise réussit.
-
-Ce qui me différencie d'un simple bot : je retiens le contexte de notre conversation, je m'adapte à ta situation, et je te pose des questions pour mieux t'aider.
-
-📋 Tape /help pour voir toutes mes commandes.
-💬 Ou dis-moi simplement où tu en es avec ton projet — on commence là où tu es.
-
-*Alors, c'est quoi ton projet en ce moment ?* 🚀`;
+  return getStartUserText(firstName, language);
 }
 
-export async function handleHelp(): Promise<string> {
-  return `📋 *Mes commandes :*
-
-💼 *Conseils & Stratégie*
-/advice — Conseil business du jour
-/strategy — Stratégie de croissance ou de vente
-/marketing — Conseil marketing pratique
-/sales — Techniques de vente efficaces
-
-💡 *Idées & Inspiration*
-/idea — Génère une idée de business originale
-/quote — Citation inspirante d'un entrepreneur
-/book — Recommandation de livre business
-
-📊 *Apprentissage*
-/case — Analyse d'une entreprise connue
-/quiz — Lance un quiz business interactif
-/glossary [terme] — Explique un terme (ROI, EBITDA, CAC...)
-/news — Tendance économique importante
-
-❓ *Interaction*
-/ask [question] — Pose n'importe quelle question
-/feedback — Envoie ton avis ou suggestion
-
-💬 Tu peux aussi m'écrire librement — je me souviens de notre conversation et j'adapte mes réponses à ta situation !`;
+export async function handleHelp(language: SupportedLanguage = "en"): Promise<string> {
+  return getHelpText(language);
 }
 
 export async function handleAdvice(
@@ -183,7 +154,8 @@ export async function handleAdvice(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -197,7 +169,8 @@ export async function handleIdea(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -211,7 +184,8 @@ export async function handleStrategy(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -225,7 +199,8 @@ export async function handleMarketing(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -239,7 +214,8 @@ export async function handleSales(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -253,7 +229,8 @@ export async function handleCase(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -267,32 +244,41 @@ export async function handleBook(
     firstName,
     profile.businessContext,
     profile.conversationHistory.slice(-4),
-    profile.language
+    profile.language,
+    profile.royCohnMode
   );
 }
 
-export async function handleQuote(firstName: string): Promise<string> {
+export async function handleQuote(userId: number, firstName: string): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
     `Partage une citation inspirante d'un entrepreneur ou leader célèbre avec ${firstName}. Donne la citation en italique, la personne, son contexte, et pourquoi cette citation est puissante aujourd'hui. Termine par demander ce que ça lui évoque.`,
     firstName,
     "",
-    []
+    [],
+    profile.language,
+    profile.royCohnMode
   );
 }
 
-export async function handleQuiz(firstName: string): Promise<string> {
+export async function handleQuiz(userId: number, firstName: string): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   return await askAI(
     `Crée une question de quiz business pour ${firstName} avec 4 choix (A, B, C, D) sur un concept clé en entrepreneuriat, marketing, finance ou stratégie. Après les options, révèle la bonne réponse et explique pourquoi. Rends ça engageant !`,
     firstName,
     "",
-    []
+    [],
+    profile.language,
+    profile.royCohnMode
   );
 }
 
 export async function handleGlossary(
+  userId: number,
   firstName: string,
   term?: string
 ): Promise<string> {
+  const profile = getOrCreateProfile(userId, firstName);
   const subject = term
     ? `Explique le terme business "${term}" à ${firstName}`
     : `Choisis un terme business important (ROI, EBITDA, CAC, LTV, MVP, Burn Rate, etc.) et explique-le à ${firstName}`;
@@ -300,7 +286,9 @@ export async function handleGlossary(
     `${subject}. Format : définition simple, formule si applicable, exemple concret, pourquoi c'est important. Termine par demander si ${firstName} utilise déjà ce concept.`,
     firstName,
     "",
-    []
+    [],
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -313,7 +301,9 @@ export async function handleNews(
     `Résume une tendance ou actualité économique/business importante pour ${firstName}. Explique ce que c'est, pourquoi ça compte pour les entrepreneurs, et quelles opportunités ou risques cela crée. Termine par demander si cette tendance impacte son secteur.`,
     firstName,
     profile.businessContext,
-    profile.conversationHistory.slice(-4)
+    profile.conversationHistory.slice(-4),
+    profile.language,
+    profile.royCohnMode
   );
 }
 
@@ -322,10 +312,10 @@ export async function handleAsk(
   firstName: string,
   question: string
 ): Promise<string> {
-  if (!question.trim()) {
-    return `❓ Utilise /ask suivi de ta question, ${firstName}.\n\nExemple : \`/ask Comment fixer le prix de mon produit ?\``;
-  }
   const profile = getOrCreateProfile(userId, firstName);
+  if (!question.trim()) {
+    return getAskEmptyPrompt(firstName, profile.language);
+  }
   return await askAI(
     question,
     firstName,
@@ -368,21 +358,23 @@ export async function handleFreeText(
   return reply;
 }
 
-export function handleStats(globalCount: number, globalResetAt: number, userCount: number): string {
+export function handleStats(
+  globalCount: number,
+  globalResetAt: number,
+  userCount: number,
+  language: SupportedLanguage = "en"
+): string {
   const hoursLeft = Math.ceil((globalResetAt - Date.now()) / (60 * 60 * 1000));
-  return `📊 *Statistiques du bot*
-
-🌍 Messages globaux aujourd'hui : *${globalCount}* / 300
-👤 Tes messages aujourd'hui : *${userCount}* (illimité pour toi)
-🔄 Remise à zéro dans : ~${hoursLeft}h`;
+  return getStatsText(globalCount, hoursLeft, userCount, language);
 }
 
 export async function handleFeedback(
   firstName: string,
-  feedback: string
+  feedback: string,
+  language: SupportedLanguage = "en"
 ): Promise<string> {
   if (!feedback.trim()) {
-    return `📝 Envoie ton avis avec /feedback suivi de ton message, ${firstName}.\n\nExemple : \`/feedback J'adorerais un mode quiz quotidien !\``;
+    return getFeedbackPrompt(firstName, language);
   }
-  return `✅ Merci ${firstName} pour ton retour !\n\n_"${feedback}"_\n\nC'est exactement ce genre de feedback qui aide à améliorer le bot. Je l'ai bien noté. 🙏`;
+  return getFeedbackThanks(firstName, feedback, language);
 }

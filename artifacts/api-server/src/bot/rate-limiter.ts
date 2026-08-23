@@ -5,6 +5,9 @@
  * Resets every 24 hours automatically.
  */
 
+import type { SupportedLanguage } from "./config.js";
+import { getRateLimitUserMessage, getRateLimitGlobalMessage } from "./config.js";
+
 const MAX_PER_USER_PER_DAY = 20;
 const MAX_GLOBAL_PER_DAY = 300;
 
@@ -78,18 +81,15 @@ export function getStats(userId: number): { globalCount: number; globalResetAt: 
   return { globalCount, globalResetAt, userCount };
 }
 
-export function getRateLimitMessage(result: Extract<RateLimitResult, { allowed: false }>): string {
+export function getRateLimitMessage(
+  result: Extract<RateLimitResult, { allowed: false }>,
+  language: SupportedLanguage = "en"
+): string {
   const hoursLeft = Math.ceil((result.resetAt - Date.now()) / (60 * 60 * 1000));
 
   if (result.reason === "user_limit") {
-    return (
-      `⏳ Tu as atteint la limite de *${MAX_PER_USER_PER_DAY} messages par jour*.\n\n` +
-      `Reviens dans ~${hoursLeft}h pour continuer. Cette limite existe pour garder le service gratuit et durable pour tous. 🙏`
-    );
+    return getRateLimitUserMessage(hoursLeft, MAX_PER_USER_PER_DAY, language);
   }
 
-  return (
-    `🔒 Le bot a atteint sa limite journalière de messages.\n\n` +
-    `Réessaie dans ~${hoursLeft}h. Merci de ta compréhension !`
-  );
+  return getRateLimitGlobalMessage(hoursLeft, language);
 }

@@ -20,7 +20,10 @@ export function getOrCreateProfile(userId: number, firstName?: string): UserProf
     profile = {
       firstName: firstName ?? "toi",
       language: "en",
-      royCohnMode: false,
+      // Roy Cohn is the bot's base persona — always on by default, not just
+      // triggered by mentioning his name. Set to false only if a user ever
+      // needs to opt out.
+      royCohnMode: true,
       conversationHistory: [],
       businessContext: "",
       messageCount: 0,

@@ -23,6 +23,7 @@ import { getOrCreateProfile, getUserLanguage, setRoyCohnMode, setUserLanguage } 
 import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS } from "./rate-limiter.js";
 import { creator, creatorTelegramId, languageOptions, getThinkingStickerId, setThinkingStickerId, type SupportedLanguage } from "./config.js";
 import { isDangerousMessage, safetyResponse } from "./safety.js";
+import { getCreatorLine, getGenericError, getStatsRestricted, getTermsText, getPrivacyText } from "./config.js";
 
 export function startBot(): void {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -43,12 +44,12 @@ export function startBot(): void {
     { command: "feedback", description: "Send feedback" },
   ]).catch((err) => logger.warn({ err }, "Could not set Telegram command menu"));
 
-  function getUserInfo(msg: Message): { userId: number; firstName: string } {
+  function getUserInfo(msg: Message): { userId: number; firstName: string; language: SupportedLanguage } {
     const userId = msg.from?.id ?? msg.chat.id;
     const firstName = msg.from?.first_name ?? "there";
     // Ensure profile exists with the right first name
     getOrCreateProfile(userId, firstName);
-    return { userId, firstName };
+    return { userId, firstName, language: getUserLanguage(userId) };
   }
 
   async function reply(chatId: number, text: string): Promise<void> {
@@ -64,14 +65,14 @@ export function startBot(): void {
   }
 
   /** Free commands — no rate limit, no OpenAI call */
-  async function withTyping(chatId: number, fn: () => Promise<string>): Promise<void> {
+  async function withTyping(chatId: number, fn: () => Promise<string>, language: SupportedLanguage = "en"): Promise<void> {
     try { await bot.sendChatAction(chatId, "typing"); } catch { /* ignore */ }
     try {
       const text = await fn();
       await reply(chatId, text);
     } catch (err) {
       logger.error({ err }, "Bot handler error");
-      await reply(chatId, "⚠️ Une erreur s'est produite. Réessaie dans quelques instants.");
+      await reply(chatId, getGenericError(language));
     }
   }
 
@@ -89,7 +90,7 @@ export function startBot(): void {
     }
     const result = checkRateLimit(userId);
     if (!result.allowed) {
-      await reply(chatId, getRateLimitMessage(result));
+      await reply(chatId, getRateLimitMessage(result, language));
       return;
     }
     const stickerId = getThinkingStickerId();
@@ -100,14 +101,14 @@ export function startBot(): void {
     } else {
       try { await bot.sendMessage(chatId, "💸"); } catch { /* ignore */ }
     }
-    await withTyping(chatId, fn);
+    await withTyping(chatId, fn, language);
   }
 
   // /start — free
   bot.onText(/^\/start/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName, language } = getUserInfo(msg);
     const isOwner = OWNER_IDS.has(userId);
-    await withTyping(msg.chat.id, () => handleStart(firstName, isOwner, getUserLanguage(userId)));
+    await withTyping(msg.chat.id, () => handleStart(firstName, isOwner, language), language);
     await bot.sendMessage(msg.chat.id, `Choose your language / Choisis ta langue :\n\n— Business Advisor AI · ${creator}`, {
       reply_markup: {
         inline_keyboard: [
@@ -124,7 +125,8 @@ export function startBot(): void {
     if (!query.message || !query.data) return;
     if (query.data === "show_help") {
       await bot.answerCallbackQuery(query.id);
-      await reply(query.message.chat.id, await handleHelp());
+      const language = getUserLanguage(query.from.id);
+      await reply(query.message.chat.id, await handleHelp(language));
       return;
     }
     if (!query.data.startsWith("lang:")) return;
@@ -136,34 +138,9 @@ export function startBot(): void {
     await reply(query.message.chat.id, languageConfirmation(code));
   });
 
-  bot.onText(/^\/language$/, async (msg) => {
-    await bot.sendMessage(msg.chat.id, "Choose your language / Choisis ta langue :", {
-      reply_markup: {
-        inline_keyboard: languageOptions.map((option) => [
-          { text: option.label, callback_data: `lang:${option.code}` },
-        ]),
-      },
-    });
-  });
-
-  const languageShortcuts: Record<string, SupportedLanguage> = {
-    "/fr": "fr",
-    "/en": "en",
-    "/es": "es",
-    "/de": "de",
-    "/zh": "zh",
-    "/ru": "ru",
-  };
-  for (const [command, language] of Object.entries(languageShortcuts)) {
-    bot.onText(new RegExp(`^\\${command}$`), async (msg) => {
-      const userId = msg.from?.id ?? msg.chat.id;
-      setUserLanguage(userId, language);
-      await reply(msg.chat.id, languageConfirmation(language));
-    });
-  }
-
   bot.onText(/^\/creator/, async (msg) => {
-    await reply(msg.chat.id, `This bot is created by ${creator}.`);
+    const { language } = getUserInfo(msg);
+    await reply(msg.chat.id, getCreatorLine(creator, language));
   });
 
   // Owner setup: send any sticker to the bot to retrieve and activate its file_id.
@@ -178,34 +155,30 @@ export function startBot(): void {
   });
 
   bot.onText(/^\/terms/, async (msg) => {
-    await reply(msg.chat.id, `Terms & privacy notice:
-
-• General educational information only — not medical, legal, tax, or financial advice.
-• Never share passwords, payment details, or highly sensitive information.
-• Telegram and OpenAI process messages to deliver this service.
-• Conversation context is kept in memory only for personalization and is lost when the service restarts.
-• For deletion or privacy questions, contact ${creator}.
-• In immediate danger, contact local emergency services.`);
+    const { language } = getUserInfo(msg);
+    await reply(msg.chat.id, getTermsText(creator, language));
   });
 
   bot.onText(/^\/privacy/, async (msg) => {
-    await reply(msg.chat.id, `Privacy: we minimize data and do not needlessly store conversations in a database. Telegram and OpenAI may process messages to provide replies. Do not send secrets. Contact ${creator} for privacy questions or deletion requests.`);
+    const { language } = getUserInfo(msg);
+    await reply(msg.chat.id, getPrivacyText(creator, language));
   });
 
   // /stats — owner only
   bot.onText(/^\/stats/, async (msg) => {
-    const { userId } = getUserInfo(msg);
+    const { userId, language } = getUserInfo(msg);
     if (!OWNER_IDS.has(userId)) {
-      await reply(msg.chat.id, "❌ Commande réservée au créateur du bot.");
+      await reply(msg.chat.id, getStatsRestricted(language));
       return;
     }
     const { globalCount, globalResetAt, userCount } = getStats(userId);
-    await reply(msg.chat.id, handleStats(globalCount, globalResetAt, userCount));
+    await reply(msg.chat.id, handleStats(globalCount, globalResetAt, userCount, language));
   });
 
   // /help — free
   bot.onText(/^\/help/, async (msg) => {
-    await withTyping(msg.chat.id, () => handleHelp());
+    const { language } = getUserInfo(msg);
+    await withTyping(msg.chat.id, () => handleHelp(language), language);
   });
 
   // /advice
@@ -253,20 +226,20 @@ export function startBot(): void {
   // /quote
   bot.onText(/^\/quote/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
-    await withTypingLimited(msg.chat.id, userId, () => handleQuote(firstName));
+    await withTypingLimited(msg.chat.id, userId, () => handleQuote(userId, firstName));
   });
 
   // /quiz
   bot.onText(/^\/quiz/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
-    await withTypingLimited(msg.chat.id, userId, () => handleQuiz(firstName));
+    await withTypingLimited(msg.chat.id, userId, () => handleQuiz(userId, firstName));
   });
 
   // /glossary [term]
   bot.onText(/^\/glossary(?:\s+(.+))?$/, async (msg, match) => {
     const { userId, firstName } = getUserInfo(msg);
     const term = match?.[1]?.trim();
-    await withTypingLimited(msg.chat.id, userId, () => handleGlossary(firstName, term));
+    await withTypingLimited(msg.chat.id, userId, () => handleGlossary(userId, firstName, term));
   });
 
   // /news
@@ -287,9 +260,9 @@ export function startBot(): void {
 
   // /feedback — free
   bot.onText(/^\/feedback(?:\s+(.+))?$/, async (msg, match) => {
-    const { firstName } = getUserInfo(msg);
+    const { firstName, language } = getUserInfo(msg);
     const feedback = match?.[1]?.trim() ?? "";
-    await withTyping(msg.chat.id, () => handleFeedback(firstName, feedback));
+    await withTyping(msg.chat.id, () => handleFeedback(firstName, feedback, language), language);
   });
 
   // Free text — rate limited
@@ -324,4 +297,4 @@ function languageConfirmation(language: SupportedLanguage): string {
     ru: "Русский выбран. Дальше я буду отвечать на русском.",
   };
   return messages[language];
-}
+}cmd34
