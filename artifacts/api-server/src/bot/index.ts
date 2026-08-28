@@ -16,14 +16,17 @@ import {
   handleNews,
   handleAsk,
   handleFreeText,
+  handleDocument,
+  handlePhoto,
+  handleVoice,
   handleFeedback,
   handleStats,
 } from "./handlers.js";
 import { getOrCreateProfile, getUserLanguage, setRoyCohnMode, setUserLanguage } from "./user-profiles.js";
-import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS } from "./rate-limiter.js";
+import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS, MAX_GLOBAL_PER_DAY } from "./rate-limiter.js";
 import { creator, creatorTelegramId, languageOptions, getThinkingStickerId, setThinkingStickerId, type SupportedLanguage } from "./config.js";
 import { isDangerousMessage, safetyResponse } from "./safety.js";
-import { getCreatorLine, getGenericError, getStatsRestricted, getTermsText, getPrivacyText } from "./config.js";
+import { getCreatorLine, getGenericError, getStatsRestricted, getTermsText, getPrivacyText, getVoiceTranscriptionFailedText, getPhotoReadFailedText } from "./config.js";
 
 export function startBot(): void {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -47,12 +50,12 @@ export function startBot(): void {
   function getUserInfo(msg: Message): { userId: number; firstName: string; language: SupportedLanguage } {
     const userId = msg.from?.id ?? msg.chat.id;
     const firstName = msg.from?.first_name ?? "there";
-    // Ensure profile exists with the right first name
     getOrCreateProfile(userId, firstName);
     return { userId, firstName, language: getUserLanguage(userId) };
   }
 
   async function reply(chatId: number, text: string): Promise<void> {
+    if (!text) return; // empty string means "stay silent" (e.g. flood protection)
     try {
       await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
     } catch {
@@ -64,7 +67,6 @@ export function startBot(): void {
     }
   }
 
-  /** Free commands — no rate limit, no OpenAI call */
   async function withTyping(chatId: number, fn: () => Promise<string>, language: SupportedLanguage = "en"): Promise<void> {
     try { await bot.sendChatAction(chatId, "typing"); } catch { /* ignore */ }
     try {
@@ -76,7 +78,6 @@ export function startBot(): void {
     }
   }
 
-  /** AI-powered commands — rate limited */
   async function withTypingLimited(
     chatId: number,
     userId: number,
@@ -104,7 +105,6 @@ export function startBot(): void {
     await withTyping(chatId, fn, language);
   }
 
-  // /start — free
   bot.onText(/^\/start/, async (msg) => {
     const { userId, firstName, language } = getUserInfo(msg);
     const isOwner = OWNER_IDS.has(userId);
@@ -143,7 +143,6 @@ export function startBot(): void {
     await reply(msg.chat.id, getCreatorLine(creator, language));
   });
 
-  // Owner setup: send any sticker to the bot to retrieve and activate its file_id.
   bot.on("message", async (msg) => {
     if (!msg.sticker || msg.from?.id !== creatorTelegramId) return;
     const fileId = msg.sticker.file_id;
@@ -164,7 +163,6 @@ export function startBot(): void {
     await reply(msg.chat.id, getPrivacyText(creator, language));
   });
 
-  // /stats — owner only
   bot.onText(/^\/stats/, async (msg) => {
     const { userId, language } = getUserInfo(msg);
     if (!OWNER_IDS.has(userId)) {
@@ -172,83 +170,70 @@ export function startBot(): void {
       return;
     }
     const { globalCount, globalResetAt, userCount } = getStats(userId);
-    await reply(msg.chat.id, handleStats(globalCount, globalResetAt, userCount, language));
+    await reply(msg.chat.id, handleStats(globalCount, globalResetAt, userCount, MAX_GLOBAL_PER_DAY, language));
   });
 
-  // /help — free
   bot.onText(/^\/help/, async (msg) => {
     const { language } = getUserInfo(msg);
     await withTyping(msg.chat.id, () => handleHelp(language), language);
   });
 
-  // /advice
   bot.onText(/^\/advice/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleAdvice(userId, firstName));
   });
 
-  // /idea
   bot.onText(/^\/idea/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleIdea(userId, firstName));
   });
 
-  // /strategy
   bot.onText(/^\/strategy/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleStrategy(userId, firstName));
   });
 
-  // /marketing
   bot.onText(/^\/marketing/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleMarketing(userId, firstName));
   });
 
-  // /sales
   bot.onText(/^\/sales/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleSales(userId, firstName));
   });
 
-  // /case
   bot.onText(/^\/case/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleCase(userId, firstName));
   });
 
-  // /book
   bot.onText(/^\/book/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleBook(userId, firstName));
   });
 
-  // /quote
   bot.onText(/^\/quote/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleQuote(userId, firstName));
   });
 
-  // /quiz
   bot.onText(/^\/quiz/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleQuiz(userId, firstName));
   });
 
-  // /glossary [term]
   bot.onText(/^\/glossary(?:\s+(.+))?$/, async (msg, match) => {
     const { userId, firstName } = getUserInfo(msg);
     const term = match?.[1]?.trim();
     await withTypingLimited(msg.chat.id, userId, () => handleGlossary(userId, firstName, term));
   });
 
-  // /news
   bot.onText(/^\/news/, async (msg) => {
     const { userId, firstName } = getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleNews(userId, firstName));
   });
 
-  // /ask [question]
   bot.onText(/^\/ask(?:\s+(.+))?$/, async (msg, match) => {
     const { userId, firstName } = getUserInfo(msg);
     const question = match?.[1]?.trim() ?? "";
@@ -258,11 +243,104 @@ export function startBot(): void {
     await withTypingLimited(msg.chat.id, userId, () => handleAsk(userId, firstName, question), question);
   });
 
-  // /feedback — free
   bot.onText(/^\/feedback(?:\s+(.+))?$/, async (msg, match) => {
     const { firstName, language } = getUserInfo(msg);
     const feedback = match?.[1]?.trim() ?? "";
     await withTyping(msg.chat.id, () => handleFeedback(firstName, feedback, language), language);
+  });
+
+  // Document upload — text files only for now
+  bot.on("message", async (msg) => {
+    if (!msg.document) return;
+    const { userId, firstName } = getUserInfo(msg);
+    const fileName = msg.document.file_name ?? "document";
+    const isTextFile = /\.(txt|md|csv)$/i.test(fileName);
+
+    if (!isTextFile) {
+      const language = getUserLanguage(userId);
+      await reply(
+        msg.chat.id,
+        language === "fr"
+          ? "📄 Pour l'instant, je ne lis que les fichiers texte (.txt, .md, .csv). Colle plutôt le contenu directement dans le chat."
+          : "📄 Right now I can only read text files (.txt, .md, .csv). Paste the content directly in chat instead."
+      );
+      return;
+    }
+
+    const language = getUserLanguage(userId);
+    const result = checkRateLimit(userId);
+    if (!result.allowed) {
+      await reply(msg.chat.id, getRateLimitMessage(result, language));
+      return;
+    }
+
+    try {
+      const fileLink = await bot.getFileLink(msg.document.file_id);
+      const response = await fetch(fileLink);
+      const fileText = await response.text();
+      await withTyping(msg.chat.id, () => handleDocument(userId, firstName, fileName, fileText), language);
+    } catch (err) {
+      logger.error({ err }, "Failed to process document");
+      await reply(msg.chat.id, getGenericError(language));
+    }
+  });
+
+  // Photo upload — analyze with vision. No retry on failure.
+  bot.on("message", async (msg) => {
+    if (!msg.photo || msg.photo.length === 0) return;
+    const { userId, firstName } = getUserInfo(msg);
+    const language = getUserLanguage(userId);
+    const result = checkRateLimit(userId);
+    if (!result.allowed) {
+      await reply(msg.chat.id, getRateLimitMessage(result, language));
+      return;
+    }
+
+    try {
+      const largest = msg.photo[msg.photo.length - 1];
+      const fileLink = await bot.getFileLink(largest.file_id);
+      const response = await fetch(fileLink);
+      const arrayBuffer = await response.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString("base64");
+      const contentType = response.headers.get("content-type") ?? "image/jpeg";
+      const dataUrl = `data:${contentType};base64,${base64}`;
+      await withTyping(
+        msg.chat.id,
+        () => handlePhoto(userId, firstName, dataUrl, msg.caption),
+        language
+      );
+    } catch (err) {
+      logger.error({ err }, "Failed to process photo");
+      await reply(msg.chat.id, getPhotoReadFailedText(language));
+    }
+  });
+
+  // Voice message — transcribe then respond. No retry on failure.
+  bot.on("message", async (msg) => {
+    if (!msg.voice) return;
+    const { userId, firstName } = getUserInfo(msg);
+    const language = getUserLanguage(userId);
+    const result = checkRateLimit(userId);
+    if (!result.allowed) {
+      await reply(msg.chat.id, getRateLimitMessage(result, language));
+      return;
+    }
+
+    try {
+      const fileLink = await bot.getFileLink(msg.voice.file_id);
+      const response = await fetch(fileLink);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = Buffer.from(arrayBuffer);
+      const transcriptReply = await handleVoice(userId, firstName, audioBuffer);
+      if (transcriptReply === null) {
+        await reply(msg.chat.id, getVoiceTranscriptionFailedText(language));
+        return;
+      }
+      await reply(msg.chat.id, transcriptReply);
+    } catch (err) {
+      logger.error({ err }, "Failed to process voice message");
+      await reply(msg.chat.id, getVoiceTranscriptionFailedText(language));
+    }
   });
 
   // Free text — rate limited
@@ -297,4 +375,12 @@ function languageConfirmation(language: SupportedLanguage): string {
     ru: "Русский выбран. Дальше я буду отвечать на русском.",
   };
   return messages[language];
-}cmd34
+}
+
+// A single bad request should never bring the whole bot process down.
+process.on("uncaughtException", (err) => {
+  logger.error({ err }, "Uncaught exception — bot stays alive");
+});
+process.on("unhandledRejection", (err) => {
+  logger.error({ err }, "Unhandled promise rejection — bot stays alive");
+});

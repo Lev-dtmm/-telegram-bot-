@@ -26,7 +26,6 @@ export const defaultLanguage: SupportedLanguage = "en";
 
 // ─── Translations (merged in so no extra file is needed) ─────────────────────
 
-
 export function getHelpText(language: SupportedLanguage): string {
   switch (language) {
     case "fr":
@@ -233,20 +232,20 @@ export function getStatsRestricted(language: SupportedLanguage): string {
   }
 }
 
-export function getStatsText(globalCount: number, hoursLeft: number, userCount: number, language: SupportedLanguage): string {
+export function getStatsText(globalCount: number, hoursLeft: number, userCount: number, maxGlobalPerDay: number, language: SupportedLanguage): string {
   switch (language) {
     case "fr":
-      return `📊 *Statistiques du bot*\n\n🌍 Messages globaux aujourd'hui : *${globalCount}* / 300\n👤 Tes messages aujourd'hui : *${userCount}* (illimité pour toi)\n🔄 Remise à zéro dans : ~${hoursLeft}h`;
+      return `📊 *Statistiques du bot*\n\n🌍 Messages globaux aujourd'hui : *${globalCount}* / ${maxGlobalPerDay}\n👤 Tes messages aujourd'hui : *${userCount}* (illimité pour toi)\n🔄 Remise à zéro dans : ~${hoursLeft}h`;
     case "es":
-      return `📊 *Estadísticas del bot*\n\n🌍 Mensajes globales hoy: *${globalCount}* / 300\n👤 Tus mensajes hoy: *${userCount}* (ilimitado para ti)\n🔄 Reinicio en: ~${hoursLeft}h`;
+      return `📊 *Estadísticas del bot*\n\n🌍 Mensajes globales hoy: *${globalCount}* / ${maxGlobalPerDay}\n👤 Tus mensajes hoy: *${userCount}* (ilimitado para ti)\n🔄 Reinicio en: ~${hoursLeft}h`;
     case "de":
-      return `📊 *Bot-Statistiken*\n\n🌍 Globale Nachrichten heute: *${globalCount}* / 300\n👤 Deine Nachrichten heute: *${userCount}* (unbegrenzt für dich)\n🔄 Zurücksetzen in: ~${hoursLeft}Std`;
+      return `📊 *Bot-Statistiken*\n\n🌍 Globale Nachrichten heute: *${globalCount}* / ${maxGlobalPerDay}\n👤 Deine Nachrichten heute: *${userCount}* (unbegrenzt für dich)\n🔄 Zurücksetzen in: ~${hoursLeft}Std`;
     case "zh":
-      return `📊 *机器人统计*\n\n🌍 今日全局消息数：*${globalCount}* / 300\n👤 你今日的消息数：*${userCount}*（对你无限制）\n🔄 将在约 ${hoursLeft} 小时后重置`;
+      return `📊 *机器人统计*\n\n🌍 今日全局消息数：*${globalCount}* / ${maxGlobalPerDay}\n👤 你今日的消息数：*${userCount}*（对你无限制）\n🔄 将在约 ${hoursLeft} 小时后重置`;
     case "ru":
-      return `📊 *Статистика бота*\n\n🌍 Сообщений сегодня всего: *${globalCount}* / 300\n👤 Твоих сообщений сегодня: *${userCount}* (без ограничений для тебя)\n🔄 Сброс через: ~${hoursLeft}ч`;
+      return `📊 *Статистика бота*\n\n🌍 Сообщений сегодня всего: *${globalCount}* / ${maxGlobalPerDay}\n👤 Твоих сообщений сегодня: *${userCount}* (без ограничений для тебя)\n🔄 Сброс через: ~${hoursLeft}ч`;
     default:
-      return `📊 *Bot statistics*\n\n🌍 Global messages today: *${globalCount}* / 300\n👤 Your messages today: *${userCount}* (unlimited for you)\n🔄 Resets in: ~${hoursLeft}h`;
+      return `📊 *Bot statistics*\n\n🌍 Global messages today: *${globalCount}* / ${maxGlobalPerDay}\n👤 Your messages today: *${userCount}* (unlimited for you)\n🔄 Resets in: ~${hoursLeft}h`;
   }
 }
 
@@ -281,6 +280,40 @@ export function getGenericError(language: SupportedLanguage): string {
       return "⚠️ Произошла ошибка. Попробуй ещё раз через пару минут.";
     default:
       return "⚠️ An error occurred. Please try again in a moment.";
+  }
+}
+
+export function getVoiceTranscriptionFailedText(language: SupportedLanguage): string {
+  switch (language) {
+    case "fr":
+      return "🎙️ Je n'ai pas réussi à comprendre ce message vocal. Peux-tu réessayer, ou l'écrire directement en texte ?";
+    case "es":
+      return "🎙️ No pude entender ese mensaje de voz. ¿Puedes intentarlo de nuevo, o escribirlo directamente?";
+    case "de":
+      return "🎙️ Ich konnte diese Sprachnachricht nicht verstehen. Versuch es noch einmal oder schreib es direkt als Text.";
+    case "zh":
+      return "🎙️ 我没能听懂这条语音消息。你可以再试一次，或者直接打字发送。";
+    case "ru":
+      return "🎙️ Не удалось разобрать это голосовое сообщение. Попробуй ещё раз или напиши текстом.";
+    default:
+      return "🎙️ I couldn't understand that voice message. Try again, or type it out directly.";
+  }  
+}
+   
+export function getPhotoReadFailedText(language: SupportedLanguage): string {
+  switch (language) {
+    case "fr":
+      return "📷 Je n'ai pas réussi à lire cette photo. Essaie d'envoyer une image plus claire, ou décris-moi la situation en texte.";
+    case "es":
+      return "📷 No pude leer esa foto. Intenta enviar una imagen más clara, o descríbeme la situación en texto.";
+    case "de":
+      return "📷 Ich konnte dieses Foto nicht lesen. Versuch ein klareres Bild zu senden oder beschreib mir die Situation als Text.";
+    case "zh":
+      return "📷 我没能读取这张照片。请尝试发送更清晰的图片，或用文字描述情况。";
+    case "ru":
+      return "📷 Не удалось прочитать это фото. Попробуй отправить более чёткое изображение или опиши ситуацию текстом.";
+    default:
+      return "📷 I couldn't read that photo. Try sending a clearer image, or describe the situation in text.";
   }
 }
 
