@@ -17,6 +17,7 @@ import {
   handleAsk,
   handleFreeText,
   handleDocument,
+  handlePdf,
   handlePhoto,
   handleVoice,
   handleFeedback,
@@ -55,7 +56,7 @@ export function startBot(): void {
   }
 
   async function reply(chatId: number, text: string): Promise<void> {
-    if (!text) return; // empty string means "stay silent" (e.g. flood protection)
+    if (!text) return;
     try {
       await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
     } catch {
@@ -249,25 +250,25 @@ export function startBot(): void {
     await withTyping(msg.chat.id, () => handleFeedback(firstName, feedback, language), language);
   });
 
-  // Document upload — text files only for now
+  // Document upload — text files (.txt/.md/.csv) and PDFs. No retry on failure.
   bot.on("message", async (msg) => {
     if (!msg.document) return;
     const { userId, firstName } = getUserInfo(msg);
     const fileName = msg.document.file_name ?? "document";
+    const language = getUserLanguage(userId);
     const isTextFile = /\.(txt|md|csv)$/i.test(fileName);
+    const isPdf = /\.pdf$/i.test(fileName);
 
-    if (!isTextFile) {
-      const language = getUserLanguage(userId);
+    if (!isTextFile && !isPdf) {
       await reply(
         msg.chat.id,
         language === "fr"
-          ? "📄 Pour l'instant, je ne lis que les fichiers texte (.txt, .md, .csv). Colle plutôt le contenu directement dans le chat."
-          : "📄 Right now I can only read text files (.txt, .md, .csv). Paste the content directly in chat instead."
+          ? "📄 Pour l'instant, je lis les fichiers texte (.txt, .md, .csv) et les PDF. Colle plutôt le contenu directement dans le chat."
+          : "📄 Right now I can read text files (.txt, .md, .csv) and PDFs. Paste the content directly in chat instead."
       );
       return;
     }
 
-    const language = getUserLanguage(userId);
     const result = checkRateLimit(userId);
     if (!result.allowed) {
       await reply(msg.chat.id, getRateLimitMessage(result, language));
@@ -277,6 +278,24 @@ export function startBot(): void {
     try {
       const fileLink = await bot.getFileLink(msg.document.file_id);
       const response = await fetch(fileLink);
+
+      if (isPdf) {
+        const arrayBuffer = await response.arrayBuffer();
+        const pdfBuffer = Buffer.from(arrayBuffer);
+        await withTyping(
+          msg.chat.id,
+          async () => {
+            const docReply = await handlePdf(userId, firstName, fileName, pdfBuffer);
+            return docReply ??
+              (language === "fr"
+                ? "📄 Je n'ai pas réussi à extraire le texte de ce PDF (probablement un scan sans texte lisible). Essaie de coller le contenu directement en texte."
+                : "📄 I couldn't extract text from that PDF (probably a scanned image with no readable text). Try pasting the content as plain text instead.");
+          },
+          language
+        );
+        return;
+      }
+
       const fileText = await response.text();
       await withTyping(msg.chat.id, () => handleDocument(userId, firstName, fileName, fileText), language);
     } catch (err) {
@@ -377,7 +396,6 @@ function languageConfirmation(language: SupportedLanguage): string {
   return messages[language];
 }
 
-// A single bad request should never bring the whole bot process down.
 process.on("uncaughtException", (err) => {
   logger.error({ err }, "Uncaught exception — bot stays alive");
 });

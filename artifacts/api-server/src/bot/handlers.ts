@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import pdfParse from "pdf-parse";
 import {
   getOrCreateProfile,
   addToHistory,
@@ -380,7 +381,6 @@ export async function handleFreeText(
 ): Promise<string> {
   const profile = getOrCreateProfile(userId, firstName);
 
-  // Add user message to history
   addToHistory(userId, "user", text);
 
   const reply = await askAI(
@@ -392,10 +392,8 @@ export async function handleFreeText(
     profile.royCohnMode
   );
 
-  // Add assistant reply to history
   addToHistory(userId, "assistant", reply);
 
-  // Silently extract and update business context (fire and forget)
   extractContext(text, reply)
     .then((ctx) => {
       if (ctx) updateBusinessContext(userId, ctx);
@@ -421,6 +419,31 @@ export async function handleDocument(
     profile.language,
     profile.royCohnMode
   );
+}
+
+/**
+ * Extracts text from a PDF buffer and analyzes it like a document.
+ * Returns null if the PDF has no extractable text (e.g. scanned images).
+ */
+export async function handlePdf(
+  userId: number,
+  firstName: string,
+  fileName: string,
+  pdfBuffer: Buffer
+): Promise<string | null> {
+  let extractedText: string;
+  try {
+    const parsed = await pdfParse(pdfBuffer);
+    extractedText = parsed.text?.trim() ?? "";
+  } catch {
+    return null;
+  }
+
+  if (!extractedText) {
+    return null;
+  }
+
+  return await handleDocument(userId, firstName, fileName, extractedText);
 }
 
 /** Analyze a photo (business chart, storefront, product, etc.) using vision. */
