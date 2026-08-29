@@ -48,11 +48,11 @@ export function startBot(): void {
     { command: "feedback", description: "Send feedback" },
   ]).catch((err) => logger.warn({ err }, "Could not set Telegram command menu"));
 
-  function getUserInfo(msg: Message): { userId: number; firstName: string; language: SupportedLanguage } {
+  async function getUserInfo(msg: Message): Promise<{ userId: number; firstName: string; language: SupportedLanguage }> {
     const userId = msg.from?.id ?? msg.chat.id;
     const firstName = msg.from?.first_name ?? "there";
-    getOrCreateProfile(userId, firstName);
-    return { userId, firstName, language: getUserLanguage(userId) };
+    const profile = await getOrCreateProfile(userId, firstName);
+    return { userId, firstName, language: profile.language };
   }
 
   async function reply(chatId: number, text: string): Promise<void> {
@@ -85,7 +85,7 @@ export function startBot(): void {
     fn: () => Promise<string>,
     rawText = ""
   ): Promise<void> {
-    const language = getUserLanguage(userId);
+    const language = await getUserLanguage(userId);
     if (isDangerousMessage(rawText)) {
       await reply(chatId, safetyResponse(language));
       return;
@@ -107,7 +107,7 @@ export function startBot(): void {
   }
 
   bot.onText(/^\/start/, async (msg) => {
-    const { userId, firstName, language } = getUserInfo(msg);
+    const { userId, firstName, language } = await getUserInfo(msg);
     const isOwner = OWNER_IDS.has(userId);
     await withTyping(msg.chat.id, () => handleStart(firstName, isOwner, language), language);
     await bot.sendMessage(msg.chat.id, `Choose your language / Choisis ta langue :\n\n— Business Advisor AI · ${creator}`, {
@@ -126,7 +126,7 @@ export function startBot(): void {
     if (!query.message || !query.data) return;
     if (query.data === "show_help") {
       await bot.answerCallbackQuery(query.id);
-      const language = getUserLanguage(query.from.id);
+      const language = await getUserLanguage(query.from.id);
       await reply(query.message.chat.id, await handleHelp(language));
       return;
     }
@@ -134,13 +134,13 @@ export function startBot(): void {
     const code = query.data.slice(5) as SupportedLanguage;
     if (!languageOptions.some((option) => option.code === code)) return;
     const userId = query.from.id;
-    setUserLanguage(userId, code);
+    await setUserLanguage(userId, code);
     await bot.answerCallbackQuery(query.id, { text: "Language saved" });
     await reply(query.message.chat.id, languageConfirmation(code));
   });
 
   bot.onText(/^\/creator/, async (msg) => {
-    const { language } = getUserInfo(msg);
+    const { language } = await getUserInfo(msg);
     await reply(msg.chat.id, getCreatorLine(creator, language));
   });
 
@@ -155,17 +155,17 @@ export function startBot(): void {
   });
 
   bot.onText(/^\/terms/, async (msg) => {
-    const { language } = getUserInfo(msg);
+    const { language } = await getUserInfo(msg);
     await reply(msg.chat.id, getTermsText(creator, language));
   });
 
   bot.onText(/^\/privacy/, async (msg) => {
-    const { language } = getUserInfo(msg);
+    const { language } = await getUserInfo(msg);
     await reply(msg.chat.id, getPrivacyText(creator, language));
   });
 
   bot.onText(/^\/stats/, async (msg) => {
-    const { userId, language } = getUserInfo(msg);
+    const { userId, language } = await getUserInfo(msg);
     if (!OWNER_IDS.has(userId)) {
       await reply(msg.chat.id, getStatsRestricted(language));
       return;
@@ -175,68 +175,68 @@ export function startBot(): void {
   });
 
   bot.onText(/^\/help/, async (msg) => {
-    const { language } = getUserInfo(msg);
+    const { language } = await getUserInfo(msg);
     await withTyping(msg.chat.id, () => handleHelp(language), language);
   });
 
   bot.onText(/^\/advice/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleAdvice(userId, firstName));
   });
 
   bot.onText(/^\/idea/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleIdea(userId, firstName));
   });
 
   bot.onText(/^\/strategy/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleStrategy(userId, firstName));
   });
 
   bot.onText(/^\/marketing/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleMarketing(userId, firstName));
   });
 
   bot.onText(/^\/sales/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleSales(userId, firstName));
   });
 
   bot.onText(/^\/case/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleCase(userId, firstName));
   });
 
   bot.onText(/^\/book/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleBook(userId, firstName));
   });
 
   bot.onText(/^\/quote/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleQuote(userId, firstName));
   });
 
   bot.onText(/^\/quiz/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleQuiz(userId, firstName));
   });
 
   bot.onText(/^\/glossary(?:\s+(.+))?$/, async (msg, match) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     const term = match?.[1]?.trim();
     await withTypingLimited(msg.chat.id, userId, () => handleGlossary(userId, firstName, term));
   });
 
   bot.onText(/^\/news/, async (msg) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     await withTypingLimited(msg.chat.id, userId, () => handleNews(userId, firstName));
   });
 
   bot.onText(/^\/ask(?:\s+(.+))?$/, async (msg, match) => {
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName } = await getUserInfo(msg);
     const question = match?.[1]?.trim() ?? "";
     if (question.toLowerCase().includes("roy cohn")) {
       setRoyCohnMode(userId, true);
@@ -245,7 +245,7 @@ export function startBot(): void {
   });
 
   bot.onText(/^\/feedback(?:\s+(.+))?$/, async (msg, match) => {
-    const { firstName, language } = getUserInfo(msg);
+    const { firstName, language } = await getUserInfo(msg);
     const feedback = match?.[1]?.trim() ?? "";
     await withTyping(msg.chat.id, () => handleFeedback(firstName, feedback, language), language);
   });
@@ -253,9 +253,8 @@ export function startBot(): void {
   // Document upload — text files (.txt/.md/.csv) and PDFs. No retry on failure.
   bot.on("message", async (msg) => {
     if (!msg.document) return;
-    const { userId, firstName } = getUserInfo(msg);
+    const { userId, firstName, language } = await getUserInfo(msg);
     const fileName = msg.document.file_name ?? "document";
-    const language = getUserLanguage(userId);
     const isTextFile = /\.(txt|md|csv)$/i.test(fileName);
     const isPdf = /\.pdf$/i.test(fileName);
 
@@ -307,8 +306,7 @@ export function startBot(): void {
   // Photo upload — analyze with vision. No retry on failure.
   bot.on("message", async (msg) => {
     if (!msg.photo || msg.photo.length === 0) return;
-    const { userId, firstName } = getUserInfo(msg);
-    const language = getUserLanguage(userId);
+    const { userId, firstName, language } = await getUserInfo(msg);
     const result = checkRateLimit(userId);
     if (!result.allowed) {
       await reply(msg.chat.id, getRateLimitMessage(result, language));
@@ -337,8 +335,7 @@ export function startBot(): void {
   // Voice message — transcribe then respond. No retry on failure.
   bot.on("message", async (msg) => {
     if (!msg.voice) return;
-    const { userId, firstName } = getUserInfo(msg);
-    const language = getUserLanguage(userId);
+    const { userId, firstName, language } = await getUserInfo(msg);
     const result = checkRateLimit(userId);
     if (!result.allowed) {
       await reply(msg.chat.id, getRateLimitMessage(result, language));
@@ -365,8 +362,7 @@ export function startBot(): void {
   // Free text — rate limited
   bot.on("message", async (msg) => {
     if (!msg.text || msg.text.startsWith("/")) return;
-    const { userId, firstName } = getUserInfo(msg);
-    const language = getUserLanguage(userId);
+    const { userId, firstName, language } = await getUserInfo(msg);
     if (isDangerousMessage(msg.text)) {
       await reply(msg.chat.id, safetyResponse(language));
       return;
