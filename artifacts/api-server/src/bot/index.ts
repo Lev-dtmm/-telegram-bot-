@@ -68,6 +68,17 @@ export function startBot(): void {
     }
   }
 
+  async function sendThinkingIndicator(chatId: number): Promise<void> {
+    const stickerId = getThinkingStickerId();
+    if (stickerId) {
+      try { await bot.sendSticker(chatId, stickerId); } catch (err) {
+        logger.warn({ err }, "Thinking sticker could not be sent");
+      }
+    } else {
+      try { await bot.sendMessage(chatId, "💸"); } catch { /* ignore */ }
+    }
+  }
+
   async function withTyping(chatId: number, fn: () => Promise<string>, language: SupportedLanguage = "en"): Promise<void> {
     try { await bot.sendChatAction(chatId, "typing"); } catch { /* ignore */ }
     try {
@@ -95,14 +106,7 @@ export function startBot(): void {
       await reply(chatId, getRateLimitMessage(result, language));
       return;
     }
-    const stickerId = getThinkingStickerId();
-    if (stickerId) {
-      try { await bot.sendSticker(chatId, stickerId); } catch (err) {
-        logger.warn({ err }, "Thinking sticker could not be sent");
-      }
-    } else {
-      try { await bot.sendMessage(chatId, "💸"); } catch { /* ignore */ }
-    }
+    await sendThinkingIndicator(chatId);
     await withTyping(chatId, fn, language);
   }
 
@@ -274,6 +278,7 @@ export function startBot(): void {
       return;
     }
 
+    await sendThinkingIndicator(msg.chat.id);
     try { await bot.sendChatAction(msg.chat.id, "typing"); } catch { /* ignore */ }
 
     try {
@@ -301,8 +306,8 @@ export function startBot(): void {
     }
   });
 
-  // Photo upload — analyze with vision. Every failure path logs the real
-  // error so it's diagnosable instead of a silent generic reply.
+  // Photo upload — analyze with vision. Telegram always re-encodes photos as
+  // JPEG, so we force that MIME type instead of trusting response headers.
   bot.on("message", async (msg) => {
     if (!msg.photo || msg.photo.length === 0) return;
     const { userId, firstName, language } = await getUserInfo(msg);
@@ -312,6 +317,7 @@ export function startBot(): void {
       return;
     }
 
+    await sendThinkingIndicator(msg.chat.id);
     try { await bot.sendChatAction(msg.chat.id, "typing"); } catch { /* ignore */ }
 
     try {
@@ -320,8 +326,7 @@ export function startBot(): void {
       const response = await fetch(fileLink);
       const arrayBuffer = await response.arrayBuffer();
       const base64 = Buffer.from(arrayBuffer).toString("base64");
-      const contentType = response.headers.get("content-type") ?? "image/jpeg";
-      const dataUrl = `data:${contentType};base64,${base64}`;
+      const dataUrl = `data:image/jpeg;base64,${base64}`;
       const photoReply = await handlePhoto(userId, firstName, dataUrl, msg.caption);
       await reply(msg.chat.id, photoReply);
     } catch (err) {
@@ -340,6 +345,7 @@ export function startBot(): void {
       return;
     }
 
+    await sendThinkingIndicator(msg.chat.id);
     try { await bot.sendChatAction(msg.chat.id, "typing"); } catch { /* ignore */ }
 
     try {
