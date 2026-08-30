@@ -1,7 +1,11 @@
 import OpenAI, { toFile } from "openai";
 import pdfParse from "pdf-parse";
 import { logger } from "../lib/logger.js";
-import {
+import { File } from "node:buffer";
+if (!globalThis.File) {
+  // @ts-expect-error Node 18 doesn't type File as a global, but it works at runtime
+  globalThis.File = File;
+}import {
   getOrCreateProfile,
   addToHistory,
   updateBusinessContext,
