@@ -134,6 +134,7 @@ export function startBot(): void {
       await reply(query.message.chat.id, await handleHelp(language));
       return;
     }
+query.data.startsWith("lang:")) return;
     if (!query.data.startsWith("lang:")) return;
     const code = query.data.slice(5) as SupportedLanguage;
     if (!languageOptions.some((option) => option.code === code)) return;

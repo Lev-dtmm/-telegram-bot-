@@ -1,4 +1,5 @@
 /** Public bot configuration. Keep secrets in Replit Secrets, never in source code. */
+import { creator, creatorTelegramId, languageOptions, topicOptions, getTopicPromptText, getThinkingStickerId, setThinkingStickerId, type SupportedLanguage } from "./config.js"; 
 export const creator = "@Lev_dtmm";
 export const creatorTelegramId = 7759567618;
 
@@ -24,6 +25,30 @@ export const languageOptions = [
 export type SupportedLanguage = (typeof languageOptions)[number]["code"];
 export const defaultLanguage: SupportedLanguage = "en";
 
+export const topicOptions = [
+  { code: "idea", label: "💡 Idée business" },
+  { code: "strategy", label: "📈 Stratégie" },
+  { code: "marketing", label: "📢 Marketing" },
+  { code: "sales", label: "💰 Vente" },
+  { code: "ask", label: "❓ Autre chose" },
+] as const;
+
+export function getTopicPromptText(language: SupportedLanguage): string {
+  switch (language) {
+    case "fr":
+      return "Sur quoi tu veux qu'on discute ?";
+    case "es":
+      return "¿Sobre qué quieres que hablemos?";
+    case "de":
+      return "Worüber sollen wir sprechen?";
+    case "zh":
+      return "你想聊什么？";
+    case "ru":
+      return "О чём поговорим?";
+    default:
+      return "What do you want to talk about?";
+  }
+}
 // ─── Translations (merged in so no extra file is needed) ─────────────────────
 
 export function getHelpText(language: SupportedLanguage): string {
