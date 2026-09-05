@@ -1,4 +1,4 @@
- /** Public bot configuration. Keep secrets in Replit Secrets, never in source code. */
+/** Public bot configuration. Keep secrets in Replit Secrets, never in source code. */
 export const creator = "@Lev_dtmm";
 export const creatorTelegramId = 7759567618;
 
