@@ -25,7 +25,7 @@ import {
 } from "./handlers.js";
 import { getOrCreateProfile, getUserLanguage, setRoyCohnMode, setUserLanguage } from "./user-profiles.js";
 import { checkRateLimit, getRateLimitMessage, getStats, OWNER_IDS, MAX_GLOBAL_PER_DAY } from "./rate-limiter.js";
-import { creator, creatorTelegramId, languageOptions, getThinkingStickerId, setThinkingStickerId, type SupportedLanguage } from "./config.js";
+import { creator, creatorTelegramId, languageOptions, topicOptions, getTopicPromptText, getThinkingStickerId, setThinkingStickerId, type SupportedLanguage } from "./config.js";
 import { isDangerousMessage, safetyResponse } from "./safety.js";
 import { getCreatorLine, getGenericError, getStatsRestricted, getTermsText, getPrivacyText, getVoiceTranscriptionFailedText, getPhotoReadFailedText } from "./config.js";
 
@@ -128,20 +128,61 @@ export function startBot(): void {
 
   bot.on("callback_query", async (query) => {
     if (!query.message || !query.data) return;
+
     if (query.data === "show_help") {
       await bot.answerCallbackQuery(query.id);
       const language = await getUserLanguage(query.from.id);
       await reply(query.message.chat.id, await handleHelp(language));
       return;
     }
-query.data.startsWith("lang:")) return;
-    if (!query.data.startsWith("lang:")) return;
-    const code = query.data.slice(5) as SupportedLanguage;
-    if (!languageOptions.some((option) => option.code === code)) return;
-    const userId = query.from.id;
-    await setUserLanguage(userId, code);
-    await bot.answerCallbackQuery(query.id, { text: "Language saved" });
-    await reply(query.message.chat.id, languageConfirmation(code));
+
+    if (query.data.startsWith("lang:")) {
+      const code = query.data.slice(5) as SupportedLanguage;
+      if (!languageOptions.some((option) => option.code === code)) return;
+      const userId = query.from.id;
+      await setUserLanguage(userId, code);
+      await bot.answerCallbackQuery(query.id, { text: "Language saved" });
+      await reply(query.message.chat.id, languageConfirmation(code));
+      await bot.sendMessage(query.message.chat.id, getTopicPromptText(code), {
+        reply_markup: {
+          inline_keyboard: topicOptions.map((option) => [
+            { text: option.label, callback_data: `topic:${option.code}` },
+          ]),
+        },
+      });
+      return;
+    }
+
+    if (query.data.startsWith("topic:")) {
+      const topic = query.data.slice(6);
+      const userId = query.from.id;
+      const firstName = query.from.first_name ?? "there";
+      await getOrCreateProfile(userId, firstName);
+      await bot.answerCallbackQuery(query.id);
+      const chatId = query.message.chat.id;
+
+      if (topic === "ask") {
+        const language = await getUserLanguage(userId);
+        await reply(
+          chatId,
+          language === "fr"
+            ? "Vas-y, écris-moi directement ta question ou ta situation."
+            : "Go ahead, just type your question or situation directly."
+        );
+        return;
+      }
+
+      const topicHandlers: Record<string, () => Promise<string>> = {
+        idea: () => handleIdea(userId, firstName),
+        strategy: () => handleStrategy(userId, firstName),
+        marketing: () => handleMarketing(userId, firstName),
+        sales: () => handleSales(userId, firstName),
+      };
+      const handler = topicHandlers[topic];
+      if (!handler) return;
+      await withTypingLimited(chatId, userId, handler);
+      return;
+    }
   });
 
   bot.onText(/^\/creator/, async (msg) => {
